@@ -58,6 +58,11 @@ function Badge({ children, tone = 'gray' }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 
+function hasPendingVerification(program = {}) {
+  return ['applicationPath', 'aps', 'vpd', 'language', 'deadline', 'nc', 'historicalLine']
+    .some(key => String(program[key] ?? '').includes('待人工'));
+}
+
 function Empty({ text }) {
   return <div className="empty">{text}</div>;
 }
@@ -220,8 +225,34 @@ function App() {
 
 function Overview({ demo, profile, onRun }) {
   const s = demo?.efficiency?.summary;
+  const gradeValue = demo?.grade?.value || germanGrade(profile)?.toFixed(2) || '--';
+  const avgMatch = demo?.matching?.length ? Math.round(demo.matching.reduce((sum, item) => sum + Number(item.matchScore || 0), 0) / demo.matching.length) : null;
+  const matchBand = avgMatch === null ? '待生成' : avgMatch >= 80 ? '高匹配' : avgMatch >= 65 ? '中等偏强' : '需补强';
+  const mainRisk = demo?.matching?.find(item => String(item.riskLevel || '').includes('高'))?.gapModules || (profile.crossMajor === '否' ? '关注语言与材料截止' : '跨专业课程学分需解释');
+  const nextAction = demo ? '优先补课程描述与 APS/VPD 节点' : '填写信息后生成方案';
+  if (demo) {
+    return <section className="panel hero-panel result-first">
+      <div className="closure-strip">本次已完成闭环：建档 → 官网核验 → 成绩换算 → 课程匹配 → 文书/看板 → 政策雷达 → 报告</div>
+      <div className="result-summary-grid">
+        <div className="conclusion-card">
+          <Badge tone="blue">核心结论</Badge>
+          <div className="conclusion-metrics"><Kpi label="德国制成绩" value={gradeValue}/><Kpi label="课程匹配" value={matchBand}/></div>
+          <p><b>主要风险：</b>{Array.isArray(mainRisk) ? mainRisk.join('；') : mainRisk}</p>
+          <p><b>建议动作：</b>{nextAction}</p>
+        </div>
+        <div className="io-card">
+          <Badge tone="green">输入 → 输出</Badge>
+          <div><b>{profile.averageScore}/{profile.maxScore}</b><span>均分输入</span></div>
+          <div><b>{profile.targetDirection}</b><span>目标方向</span></div>
+          <div><b>{programsCount(demo)} 个项目 / {s?.highRisks || 0} 项风险</b><span>方案输出</span></div>
+        </div>
+      </div>
+      <div className="kpi-grid compact"><Kpi label="项目数" value={s?.projects || 3}/><Kpi label="可溯源信息" value={s?.traceableItems || 42}/><Kpi label="高风险事项" value={s?.highRisks || 5}/><Kpi label="效率提升" value={`${s?.improvement || '--'}×`}/></div>
+    </section>;
+  }
   return <section className="panel hero-panel"><div><Badge tone="blue">实际产品 Demo</Badge><h1>从申请者建档到政策雷达的一站式德国硕士申请工作台</h1><p>可交互输入申请者资料，运行官网核验、成绩换算、NC 竞争力判断、课程匹配、文书初稿、多校看板、政策雷达和效率报告。</p><button className="primary big" onClick={onRun}><Sparkles size={18}/>立即跑通全流程</button></div><div className="kpi-grid"><Kpi label="项目数" value={s?.projects || 3}/><Kpi label="可溯源信息" value={s?.traceableItems || 42}/><Kpi label="高风险事项" value={s?.highRisks || 5}/><Kpi label="效率提升" value={`${s?.improvement || '--'}×`}/></div><div className="flow"><span>建档</span><span>官网核验</span><span>成绩换算</span><span>课程匹配</span><span>文书</span><span>看板</span><span>政策雷达</span><span>报告导出</span></div></section>;
 }
+function programsCount(demo) { return demo?.programs?.length || demo?.competition?.length || 3; }
 function Kpi({ label, value }) { return <div className="kpi"><b>{value}</b><span>{label}</span></div>; }
 
 function Verification({ urls, setUrls, crawlUrls, runAnalysis, programs, analysis }) {
@@ -230,7 +261,10 @@ function Verification({ urls, setUrls, crawlUrls, runAnalysis, programs, analysi
 
 function ProgramTable({ programs = [] }) {
   if (!programs.length) return <Empty text="尚无核验结果。可点击“一键运行完整 Demo”加载演示项目，或输入官方 URL 抓取。" />;
-  return <div className="table-wrap"><table><thead><tr><th>学校/项目</th><th>类型</th><th>路径</th><th>APS</th><th>VPD</th><th>语言</th><th>Deadline</th><th>NC</th><th>来源</th></tr></thead><tbody>{programs.map((p, i) => <tr key={p.id || i}><td><b>{p.university}</b><small>{p.programName}</small></td><td>{p.universityType || '-'}</td><td>{p.applicationPath || '待人工核验'}</td><td>{p.aps || '待人工核验'}</td><td>{p.vpd || '待人工核验'}</td><td>{p.language || '待人工核验'}</td><td>{p.deadline || '待人工核验'}</td><td>{p.nc || '待人工核验'}</td><td><a href={p.sourceUrl} target="_blank" rel="noreferrer">官网</a><small>{String(p.checkedAt || '').slice(0,10)}</small></td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>学校/项目</th><th>类型</th><th>路径</th><th>APS</th><th>VPD</th><th>语言</th><th>Deadline</th><th>NC</th><th>来源/核验</th></tr></thead><tbody>{programs.map((p, i) => {
+    const pending = hasPendingVerification(p);
+    return <tr key={p.id || i} className={pending ? 'pending-row' : ''}><td><b>{p.university}</b><small>{p.programName}</small></td><td>{p.universityType || '-'}</td><td>{p.applicationPath || '待人工核验'}</td><td>{p.aps || '待人工核验'}</td><td>{p.vpd || '待人工核验'}</td><td>{p.language || '待人工核验'}</td><td>{p.deadline || '待人工核验'}</td><td>{p.nc || '待人工核验'}</td><td><div className="source-tags"><a href={p.sourceUrl} target="_blank" rel="noreferrer">官网来源</a><span>{String(p.checkedAt || '').slice(0,10)}</span><Badge tone={pending ? 'yellow' : 'green'}>{pending ? '待人工核实' : '已核验'}</Badge></div></td></tr>;
+  })}</tbody></table></div>;
 }
 
 function GradeView({ demo, grade, profile }) {
