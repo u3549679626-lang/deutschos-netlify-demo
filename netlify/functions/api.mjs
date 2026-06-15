@@ -15,6 +15,87 @@ function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
 }
 
+
+function buildFallbackAdvice(demo) {
+  const top = demo.matching?.[0] || {};
+  return {
+    ok: true,
+    mode: 'fallback-no-secret',
+    provider: 'local-rule-engine',
+    warning: '未检测到服务端环境变量 DEEPSEEK_API_KEY，当前返回本地规则兜底建议；公开仓库不会包含真实 API Key。',
+    advice: [
+      `当前德国制参考成绩为 ${demo.grade?.value}，可用于初筛排序，但正式成绩认定以学校或 uni-assist 为准。`,
+      `优先处理 APS、deadline、申请路径、语言要求和课程/ECTS 五类高风险字段。`,
+      `当前最高匹配项目为 ${top.university || '待生成'} - ${top.programName || '待生成'}，匹配分用于风险排序，不代表录取概率。`,
+      'TH Köln 等待复核项目不要写成已完成官方详情核验，PPT 中应保留“待人工核实”标注。'
+    ],
+    nextActions: [
+      '整理成绩单和英文课程描述，补齐数学/统计/计算机相关课程证据。',
+      '逐项目打开官网 admission、deadline、language requirements 页面并截图。',
+      '将报告中的风险证据转化为课程匹配说明和 Motivation Letter 素材。'
+    ]
+  };
+}
+
+async function buildAiAdvice(profile = {}, programs = []) {
+  const demo = runFullDemo(profile, programs);
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return buildFallbackAdvice(demo);
+
+  const safePayload = {
+    profile: demo.profile,
+    grade: demo.grade,
+    programs: demo.programs.map((p, i) => ({
+      university: p.university,
+      programName: p.programName,
+      sourceUrl: p.sourceUrl,
+      checkedAt: p.checkedAt,
+      fieldConfidence: p.fieldConfidence,
+      matching: demo.matching[i]
+    }))
+  };
+
+  const prompt = `你是德国硕士申请初筛顾问。请基于以下 JSON 生成中文建议，必须遵守：1) 不承诺录取概率；2) 明确区分真实计算、演示数据、待人工复核；3) 院校数量只能表述为 TUM/Saarland University/TH Köln 三个示范院校 + 引擎可扩展；4) 政策雷达仅为 Demo 配置，待长期运行验证。输出 JSON，字段为 advice 数组、nextActions 数组、riskWarnings 数组。\n\n${JSON.stringify(safePayload)}`;
+
+  const res = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: '你是严谨、诚实、合规的德国硕士申请初筛产品顾问。只输出可核验、不过度承诺的建议。' },
+        { role: 'user', content: prompt }
+      ]
+    })
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    return { ...buildFallbackAdvice(demo), mode: 'fallback-api-error', warning: `AI 服务调用失败，已返回本地兜底建议。状态码：${res.status}。错误摘要：${text.slice(0, 160)}` };
+  }
+
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  let parsed;
+  try {
+    parsed = JSON.parse(content.replace(/^```json\s*/i, '').replace(/```$/,'').trim());
+  } catch {
+    parsed = { advice: [content], nextActions: [], riskWarnings: ['AI 返回非 JSON 格式，已按原文展示。'] };
+  }
+
+  return {
+    ok: true,
+    mode: 'ai-env-proxy',
+    provider: 'deepseek-compatible-server-proxy',
+    warning: 'API Key 仅从 Netlify 服务端环境变量读取，不会暴露给浏览器或公开仓库。',
+    ...parsed
+  };
+}
+
 export async function handler(event) {
   if (event.httpMethod === 'OPTIONS') return json(200, { ok: true });
   const path = event.path.replace('/.netlify/functions/api', '').replace(/^\/api/, '') || '/health';
@@ -37,6 +118,10 @@ export async function handler(event) {
 
     if (path === '/efficiency-report') {
       return json(200, buildEfficiencyReport());
+    }
+
+    if (path === '/ai/advice') {
+      return json(200, await buildAiAdvice(body.profile || {}, body.programs || []));
     }
 
     if (path === '/export/package') {

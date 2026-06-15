@@ -33,7 +33,8 @@ const tabs = [
   ['scoring', '评分依据'],
   ['dashboard', '作战看板'],
   ['radar', '政策雷达'],
-  ['report', '报告摘要']
+  ['report', '报告摘要'],
+  ['ai', 'AI 顾问']
 ];
 
 const statusClass = (value = '') => {
@@ -106,6 +107,8 @@ function App() {
   const [result, setResult] = useState(null);
   const [active, setActive] = useState('overview');
   const [loading, setLoading] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAdvice, setAiAdvice] = useState(null);
   const [error, setError] = useState('');
 
   const update = (key, value) => setProfile(prev => ({ ...prev, [key]: value }));
@@ -118,6 +121,7 @@ function App() {
       const data = await api('/demo/run', { profile: payloadProfile });
       if (!data.ok) throw new Error(data.error || '输入校验失败');
       setResult(data);
+      setAiAdvice(null);
       setActive('overview');
     } catch (e) {
       setError(e.message || '运行失败');
@@ -127,6 +131,21 @@ function App() {
   };
 
   const reportMarkdown = useMemo(() => buildMarkdownReport(result), [result]);
+
+
+  const requestAiAdvice = async () => {
+    if (!result?.ok) return;
+    setAiLoading(true); setError('');
+    try {
+      const data = await api('/ai/advice', { profile: result.profile, programs: result.programs });
+      setAiAdvice(data);
+      setActive('ai');
+    } catch (e) {
+      setError(e.message || 'AI 顾问调用失败');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return <div className="app">
     <header className="hero">
@@ -175,7 +194,7 @@ function App() {
             <h2>2. 初筛结果与可解释报告</h2>
             <p>核心目标：把“为什么推荐 / 风险在哪 / 下一步做什么”讲清楚。</p>
           </div>
-          {result?.ok && <button className="download" onClick={() => downloadText('deutschos-initial-screening-report.md', reportMarkdown)}>下载初筛诊断报告</button>}
+          {result?.ok && <div className="result-actions"><button className="ai-button" onClick={requestAiAdvice} disabled={aiLoading}>{aiLoading ? 'AI 生成中…' : '生成 AI 顾问建议'}</button><button className="download" onClick={() => downloadText('deutschos-initial-screening-report.md', reportMarkdown)}>下载初筛诊断报告</button></div>}
         </div>
 
         {!result?.ok && <div className="empty">
@@ -250,6 +269,23 @@ function App() {
             <table><thead><tr><th>日期</th><th>学校</th><th>检查项</th><th>影响</th><th>建议动作</th></tr></thead><tbody>
               {result.policyRadar.firstRun.map((r, i) => <tr key={i}><td>{r.date}</td><td>{r.university}</td><td>{r.checks}</td><td>{r.impact}</td><td>{r.suggestedAction}</td></tr>)}
             </tbody></table>
+          </div>}
+
+
+
+          {active === 'ai' && <div className="tab-content">
+            <h3>AI 顾问建议：服务端安全代理</h3>
+            <p className="boundary-box">安全说明：真实 API Key 只允许配置在 Netlify 服务端环境变量 <b>DEEPSEEK_API_KEY</b> 中；公开 GitHub、前端代码和构建产物不包含密钥。若未配置环境变量，本页会返回本地规则兜底建议。</p>
+            {!aiAdvice && <div className="empty"><b>尚未生成 AI 建议</b><p>点击右上角“生成 AI 顾问建议”。</p></div>}
+            {aiAdvice && <div className="ai-card">
+              <div className="ai-meta"><span>模式：{aiAdvice.mode}</span><span>提供方：{aiAdvice.provider}</span></div>
+              {aiAdvice.warning && <p className="warning-line">{aiAdvice.warning}</p>}
+              <h4>建议解读</h4>
+              <ul>{(aiAdvice.advice || []).map((x, i) => <li key={`a-${i}`}>{x}</li>)}</ul>
+              {!!aiAdvice.riskWarnings?.length && <><h4>风险提醒</h4><ul className="risk-list">{aiAdvice.riskWarnings.map((x, i) => <li key={`r-${i}`}>{x}</li>)}</ul></>}
+              <h4>下一步动作</h4>
+              <ol>{(aiAdvice.nextActions || []).map((x, i) => <li key={`n-${i}`}>{x}</li>)}</ol>
+            </div>}
           </div>}
 
           {active === 'report' && <div className="tab-content">
