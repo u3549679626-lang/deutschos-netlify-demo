@@ -1,278 +1,268 @@
 import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Database, Download, FileText, Gauge, Globe2, LayoutDashboard, Loader2, Radar, ShieldCheck, Sparkles } from 'lucide-react';
 import './styles.css';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? (import.meta.env.PROD ? '' : 'http://localhost:8787');
-
-const defaultProfile = {
-  name: 'Demo Applicant',
-  educationStatus: '本科应届生',
-  university: '示例大学',
-  major: '信息管理与信息系统',
-  targetDirection: '数据科学与人工智能',
-  crossMajor: '部分跨专业',
-  intake: 'Winter 2026',
-  averageScore: 84,
-  maxScore: 100,
-  passScore: 60,
-  english: 'IELTS 6.5',
-  german: '未考',
-  apsStatus: '未开始',
-  experiences: 'Python 数据分析课程项目；机器学习课程作业；一段互联网数据运营实习；毕业论文方向为用户行为分析。'
-};
-
-function germanGrade(profile) {
-  const avg = Number(profile.averageScore);
-  const max = Number(profile.maxScore);
-  const pass = Number(profile.passScore);
-  if (!Number.isFinite(avg) || !Number.isFinite(max) || !Number.isFinite(pass) || max <= pass || avg > max || avg < pass) return null;
-  return 1 + 3 * (max - avg) / (max - pass);
-}
-
-function validateProfile(profile) {
-  const errors = [];
-  const avg = Number(profile.averageScore);
-  const max = Number(profile.maxScore);
-  const pass = Number(profile.passScore);
-  if (!Number.isFinite(avg)) errors.push('均分必须为有效数字');
-  if (!Number.isFinite(max)) errors.push('满分必须为有效数字');
-  if (!Number.isFinite(pass)) errors.push('及格线必须为有效数字');
-  if (Number.isFinite(max) && Number.isFinite(pass) && max <= pass) errors.push('满分必须高于及格线');
-  if (Number.isFinite(avg) && Number.isFinite(max) && avg > max) errors.push('均分不能高于满分');
-  if (Number.isFinite(avg) && Number.isFinite(pass) && avg < pass) errors.push('均分不能低于及格线');
-  if (!String(profile.targetDirection || '').trim()) errors.push('目标方向不能为空');
-  return errors;
-}
-
-async function api(path, payload) {
-  const res = await fetch(`${API_BASE}${path}`, {
+const api = async (path, payload = {}) => {
+  const res = await fetch(`/.netlify/functions/api${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) throw new Error(`API ${path} failed`);
   return res.json();
-}
+};
 
-function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+const demoProfile = {
+  name: 'Demo Applicant',
+  university: '中国本科院校（演示）',
+  major: '信息管理与信息系统 / 商科与数据方向交叉背景',
+  targetDirection: '数据科学与人工智能',
+  crossMajor: '部分跨专业',
+  averageScore: 84,
+  maxScore: 100,
+  passScore: 60,
+  english: 'IELTS 6.5（演示输入，需按项目官网复核）',
+  german: '未提供',
+  apsStatus: '未开始',
+  experiences: 'Python 数据分析课程项目、用户行为分析 Demo、课程论文与毕业设计素材（演示）'
+};
+
+const tabs = [
+  ['overview', '核心结论'],
+  ['programs', '项目卡'],
+  ['scoring', '评分依据'],
+  ['dashboard', '作战看板'],
+  ['radar', '政策雷达'],
+  ['report', '报告摘要']
+];
+
+const statusClass = (value = '') => {
+  if (/已核验|已提供|真实计算/.test(value)) return 'ok';
+  if (/不稳定|过期|待|复核|人工/.test(value)) return 'warn';
+  return 'info';
+};
+
+const downloadText = (filename, text) => {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
+};
+
+function buildMarkdownReport(result) {
+  if (!result?.ok) return '# DeutschOS 初筛诊断报告\n\n暂无有效结果。';
+  const p = result.profile || {};
+  const g = result.grade || {};
+  const programs = result.programs || [];
+  const matching = result.matching || [];
+  const generated = result.generatedAt || new Date().toISOString();
+  const programLines = programs.map((program, i) => {
+    const m = matching[i] || {};
+    const fields = Object.entries(program.fieldConfidence || {})
+      .map(([k, v]) => `  - ${k}: ${v}`)
+      .join('\n');
+    return `## ${i + 1}. ${program.university} - ${program.programName}\n\n- 类型：${program.universityType}\n- 匹配分：${m.matchScore ?? '待评分'} / 100\n- 梯度：${m.tier || '待评估'}\n- 风险等级：${m.riskLevel || '待评估'}\n- 来源：${program.sourceUrl}\n- 最近生成/核验日期：${String(program.checkedAt || generated).slice(0, 10)}\n- 项目数据边界：演示种子数据，申请前必须官网复核\n\n### 推荐理由\n${(m.recommendationReasons || []).map(x => `- ${x}`).join('\n')}\n\n### 风险证据\n${(m.riskEvidence || []).map(x => `- ${x}`).join('\n')}\n\n### 字段级可信度\n${fields}\n\n### 下一步任务\n${(m.nextTasks || []).map(x => `- ${x}`).join('\n')}\n`;
+  }).join('\n');
+
+  return `# DeutschOS 德国硕士申请初筛诊断报告\n\n生成时间：${generated}\n\n> 当前报告为 MVP 初筛诊断，不代表录取概率，不替代学校、uni-assist 或 APS 的官方审核。\n\n## 一、申请者输入摘要\n\n- 姓名：${p.name || '未填写'}\n- 本科院校：${p.university || '未填写'}\n- 本科专业：${p.major || '未填写'}\n- 目标方向：${p.targetDirection || '未填写'}\n- 跨专业状态：${p.crossMajor || '未填写'}\n- 语言状态：${p.english || '未填写'}\n- APS 状态：${p.apsStatus || '未填写'}\n\n## 二、德国制成绩换算\n\n- 原始均分：${g.rawAverage}\n- 满分：${g.maxScore}\n- 及格线：${g.passScore}\n- 公式：${g.formula}\n- 计算过程：${g.process}\n- 德国制参考成绩：**${g.value}**\n- 参数来源：${g.parameterSource}\n- 备注：${g.remark}\n\n## 三、示范项目初筛结果\n\n当前 Demo 使用 **TUM / Saarland University / TH Köln 三个示范院校 + 引擎可扩展** 验证流程闭环，不声称已覆盖大量院校。\n\n${programLines}\n\n## 四、可信度与边界\n\n- 成绩换算：真实计算。\n- 项目要求：演示种子数据 + 来源入口，提交前必须官网复核。\n- 评分模型：启发式初筛模型，用于风险排序，不代表录取概率。\n- 政策雷达：Demo 配置展示，待长期运行验证。\n- 效率表达：初筛从数天缩短到分钟级（基于作者真实申请经历对比），未使用无依据精确倍数。\n\n## 五、建议下一步\n\n1. 上传或整理成绩单与课程描述，补齐数学/统计/计算机/专业核心 ECTS。\n2. 逐项目打开 admission、deadline、language、application procedure 页面并保存截图。\n3. 推进 APS，核对是否需要 VPD / uni-assist / 直申。\n4. 将风险证据转化为 Motivation Letter 与课程匹配说明。\n`;
 }
 
-function Field({ label, children, hint }) {
-  return <label className="field"><span>{label}</span>{children}{hint ? <small>{hint}</small> : null}</label>;
+function FieldConfidenceTable({ program }) {
+  const rows = [
+    ['项目名称', program.fieldConfidence?.programName || '演示数据 / 待官网复核'],
+    ['来源链接', program.sourceUrl ? '已提供来源入口' : '待补充'],
+    ['抓取/生成日期', String(program.checkedAt || '').slice(0, 10) || '待补充'],
+    ['Deadline', program.fieldConfidence?.deadline || '待人工复核'],
+    ['申请路径', program.fieldConfidence?.applicationPath || '待人工复核'],
+    ['APS 要求', program.fieldConfidence?.aps || '待人工复核'],
+    ['课程/ECTS', program.fieldConfidence?.ects || '待人工复核'],
+    ['NC / Selection', program.fieldConfidence?.nc || '待人工复核']
+  ];
+  return <div className="field-table">
+    {rows.map(([k, v]) => <div className="field-row" key={k}>
+      <span>{k}</span><b className={`pill ${statusClass(v)}`}>{v}</b>
+    </div>)}
+    {program.university === 'TH Köln' && <p className="warning-line">TH Köln 当前官方详情页链接不稳定，项目详情需人工重新核验。</p>}
+  </div>;
 }
 
-function Badge({ children, tone = 'gray' }) {
-  return <span className={`badge ${tone}`}>{children}</span>;
-}
-
-function Kpi({ label, value, hint, tone }) {
-  return <div className={`kpi ${tone || ''}`}><span>{label}</span><strong>{value}</strong>{hint ? <small>{hint}</small> : null}</div>;
+function ScoreParts({ parts = [] }) {
+  return <div className="score-grid">
+    {parts.map(part => <article className="score-part" key={part.key}>
+      <div className="score-top"><b>{part.key}</b><span>{part.score} / {part.weight}</span></div>
+      <div className="bar"><i style={{ width: `${Math.min(100, (part.score / part.weight) * 100)}%` }} /></div>
+      <p>{part.reason}</p>
+    </article>)}
+  </div>;
 }
 
 function App() {
-  const [profile, setProfile] = useState(defaultProfile);
-  const [demo, setDemo] = useState(null);
-  const [loading, setLoading] = useState('');
-  const [notice, setNotice] = useState('当前为 Netlify 纯前端/函数 Demo：成绩与评分真实计算；项目要求为演示种子数据，提交申请前必须官网复核。');
-  const [active, setActive] = useState('summary');
-  const grade = useMemo(() => germanGrade(profile), [profile]);
-  const inputErrors = useMemo(() => validateProfile(profile), [profile]);
-  const update = (k, v) => setProfile(prev => ({ ...prev, [k]: v }));
+  const [profile, setProfile] = useState(demoProfile);
+  const [result, setResult] = useState(null);
+  const [active, setActive] = useState('overview');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  async function runFullDemo() {
-    const errors = validateProfile(profile);
-    if (errors.length) {
-      setDemo(null);
-      setNotice(`请先修正输入：${errors.join('；')}`);
-      return;
-    }
-    setLoading('一键运行完整 Demo');
+  const update = (key, value) => setProfile(prev => ({ ...prev, [key]: value }));
+
+  const runDemo = async (usePreset = false) => {
+    setLoading(true); setError('');
     try {
-      const data = await api('/api/demo/run', { profile });
-      if (data.ok === false) {
-        setDemo(null);
-        setNotice(`请先修正输入：${data.error || '输入不合法'}`);
-        return;
-      }
-      setDemo(data);
-      setActive('summary');
-      setNotice('已生成申请初筛方案：包含德国制成绩、项目梯度、评分依据、风险证据、下一步任务、看板与政策雷达配置。');
+      const payloadProfile = usePreset ? demoProfile : profile;
+      if (usePreset) setProfile(demoProfile);
+      const data = await api('/demo/run', { profile: payloadProfile });
+      if (!data.ok) throw new Error(data.error || '输入校验失败');
+      setResult(data);
+      setActive('overview');
     } catch (e) {
-      setNotice(`Demo 运行失败：${e.message}`);
+      setError(e.message || '运行失败');
     } finally {
-      setLoading('');
+      setLoading(false);
     }
-  }
+  };
 
-  async function exportPackage() {
-    if (!demo) return setNotice('请先运行完整 Demo，再导出结果。');
-    downloadJson('deutschos-demo-result.json', demo);
-    setNotice('已导出 JSON 初筛结果；正式版可扩展为 Word/PDF 报告。');
-  }
+  const reportMarkdown = useMemo(() => buildMarkdownReport(result), [result]);
 
-  return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="hero-copy">
-          <Badge tone="blue">DeutschOS MVP · 申请初筛与材料管理工作台</Badge>
-          <h1>输入背景，生成德国硕士申请梯度方案</h1>
-          <p>基于成绩换算、专业相关度、课程/ECTS、语言、APS、项目经历、deadline 风险和数据可信度，输出可解释、可复核的初筛方案。</p>
-          <div className="hero-actions">
-            <button className="primary" onClick={runFullDemo} disabled={!!loading}>{loading ? <Loader2 className="spin" size={18}/> : <Sparkles size={18}/>}一键运行完整 Demo</button>
-            <button className="secondary" onClick={exportPackage}><Download size={18}/>导出初筛结果</button>
-          </div>
-          <div className="trust-strip">
-            <span><CheckCircle2 size={16}/>真实计算：巴伐利亚公式</span>
-            <span><ShieldCheck size={16}/>诚信标注：演示数据/待复核</span>
-            <span><ClipboardCheck size={16}/>输出：理由、证据、任务</span>
-          </div>
+  return <div className="app">
+    <header className="hero">
+      <div className="eyebrow">DeutschOS MVP · 可信初筛 / 风险证据 / 材料作战</div>
+      <h1>德国硕士申请初筛与材料作战工作台</h1>
+      <p className="lead">输入申请者背景，生成德国制成绩、示范项目匹配、风险证据、下一步任务和可信度标注。</p>
+      <div className="hero-tags">
+        <span>真实计算：84/100/60 → 2.20</span>
+        <span>示范院校：TUM / Saarland / TH Köln</span>
+        <span>诚信边界：来源、日期、待复核</span>
+      </div>
+      <div className="hero-actions">
+        <button onClick={() => runDemo(true)} disabled={loading}>{loading ? '生成中…' : '一键运行完整 Demo'}</button>
+        <button className="ghost" onClick={() => document.querySelector('#input-panel')?.scrollIntoView({ behavior: 'smooth' })}>手动输入背景</button>
+      </div>
+      <p className="boundary">本 Demo 使用三个示范院校验证流程闭环，后续引擎可扩展；不声称覆盖大量院校，不声称录取概率预测。</p>
+    </header>
+
+    <main className="layout">
+      <section id="input-panel" className="panel input-panel">
+        <h2>1. 申请者背景输入</h2>
+        <div className="form-grid">
+          <label>姓名<input value={profile.name} onChange={e => update('name', e.target.value)} /></label>
+          <label>本科院校<input value={profile.university} onChange={e => update('university', e.target.value)} /></label>
+          <label>本科专业<input value={profile.major} onChange={e => update('major', e.target.value)} /></label>
+          <label>目标方向<input value={profile.targetDirection} onChange={e => update('targetDirection', e.target.value)} /></label>
+          <label>跨专业状态<select value={profile.crossMajor} onChange={e => update('crossMajor', e.target.value)}>
+            <option>否</option><option>部分跨专业</option><option>是</option>
+          </select></label>
+          <label>APS 状态<select value={profile.apsStatus} onChange={e => update('apsStatus', e.target.value)}>
+            <option>未开始</option><option>准备中</option><option>已递交</option><option>已通过</option><option>不确定</option>
+          </select></label>
+          <label>均分<input type="number" value={profile.averageScore} onChange={e => update('averageScore', e.target.value)} /></label>
+          <label>满分<input type="number" value={profile.maxScore} onChange={e => update('maxScore', e.target.value)} /></label>
+          <label>及格线<input type="number" value={profile.passScore} onChange={e => update('passScore', e.target.value)} /></label>
+          <label className="wide">英语成绩<input value={profile.english} onChange={e => update('english', e.target.value)} /></label>
+          <label className="wide">项目 / 实习 / 课程素材<textarea value={profile.experiences} onChange={e => update('experiences', e.target.value)} /></label>
         </div>
-        <div className="hero-card">
-          <div className="mini-title">当前核心结论</div>
-          <div className="grade-display">{grade ? grade.toFixed(2) : '--'}</div>
-          <p>德国制参考成绩</p>
-          <small>84 / 100 / 60 → 2.20；最终以学校或 uni-assist 认定为准。</small>
-        </div>
-      </header>
+        <button className="run" onClick={() => runDemo(false)} disabled={loading}>{loading ? '生成中…' : '生成初筛诊断'}</button>
+        {error && <p className="error">{error}</p>}
+      </section>
 
-      <main className="grid-layout">
-        <section className="panel form-panel">
-          <div className="section-title"><FileText size={20}/><div><h2>申请者背景输入</h2><p>无效输入会停止生成结果，避免错误方案被渲染。</p></div></div>
-          <div className="form-grid">
-            <Field label="姓名"><input value={profile.name} onChange={e => update('name', e.target.value)} /></Field>
-            <Field label="当前身份"><select value={profile.educationStatus} onChange={e => update('educationStatus', e.target.value)}><option>本科应届生</option><option>已毕业工作党</option><option>研究生在读</option></select></Field>
-            <Field label="本科院校"><input value={profile.university} onChange={e => update('university', e.target.value)} /></Field>
-            <Field label="本科专业"><input value={profile.major} onChange={e => update('major', e.target.value)} /></Field>
-            <Field label="目标方向"><input value={profile.targetDirection} onChange={e => update('targetDirection', e.target.value)} /></Field>
-            <Field label="跨专业状态"><select value={profile.crossMajor} onChange={e => update('crossMajor', e.target.value)}><option>否</option><option>部分跨专业</option><option>是</option></select></Field>
-            <Field label="均分"><input type="number" value={profile.averageScore} onChange={e => update('averageScore', e.target.value)} /></Field>
-            <Field label="满分"><input type="number" value={profile.maxScore} onChange={e => update('maxScore', e.target.value)} /></Field>
-            <Field label="及格线"><input type="number" value={profile.passScore} onChange={e => update('passScore', e.target.value)} /></Field>
-            <Field label="英语成绩"><input value={profile.english} onChange={e => update('english', e.target.value)} /></Field>
-            <Field label="APS 状态"><select value={profile.apsStatus} onChange={e => update('apsStatus', e.target.value)}><option>未开始</option><option>准备中</option><option>已递交 / 等待结果</option><option>已通过</option><option>不确定</option></select></Field>
-            <Field label="申请季"><input value={profile.intake} onChange={e => update('intake', e.target.value)} /></Field>
+      <section className="panel result-panel">
+        <div className="result-head">
+          <div>
+            <h2>2. 初筛结果与可解释报告</h2>
+            <p>核心目标：把“为什么推荐 / 风险在哪 / 下一步做什么”讲清楚。</p>
           </div>
-          <Field label="项目 / 实习 / 科研经历" hint="React 文本节点渲染用户输入，不使用危险 HTML 拼接。"><textarea value={profile.experiences} onChange={e => update('experiences', e.target.value)} rows={4}/></Field>
-          {inputErrors.length ? <div className="error-box"><AlertTriangle size={18}/><div><strong>请修正后再生成：</strong>{inputErrors.join('；')}</div></div> : null}
-        </section>
+          {result?.ok && <button className="download" onClick={() => downloadText('deutschos-initial-screening-report.md', reportMarkdown)}>下载初筛诊断报告</button>}
+        </div>
 
-        <section className="panel result-panel">
-          <div className="notice">{notice}</div>
-          <TabNav active={active} setActive={setActive} />
-          {!demo ? <EmptyState /> : <Result active={active} demo={demo} profile={profile} />}
-        </section>
-      </main>
-    </div>
-  );
-}
+        {!result?.ok && <div className="empty">
+          <b>尚未生成结果</b>
+          <p>点击“一键运行完整 Demo”或手动输入背景后生成。报告会明确区分真实计算、演示数据和待人工复核项。</p>
+        </div>}
 
-function TabNav({ active, setActive }) {
-  const tabs = [
-    ['summary', '核心结论'], ['programs', '项目卡'], ['scoring', '评分依据'], ['dashboard', '作战看板'], ['radar', '政策雷达'], ['report', '报告摘要']
-  ];
-  return <div className="tabs">{tabs.map(([key, label]) => <button key={key} className={active === key ? 'active' : ''} onClick={() => setActive(key)}>{label}</button>)}</div>;
-}
+        {result?.ok && <>
+          <nav className="tabs">{tabs.map(([id, label]) => <button key={id} className={active === id ? 'active' : ''} onClick={() => setActive(id)}>{label}</button>)}</nav>
 
-function EmptyState() {
-  return <div className="empty-state"><Gauge size={36}/><h3>点击“一键运行完整 Demo”生成申请初筛方案</h3><p>结果将包含德国制成绩、申请梯度、推荐理由、风险证据、下一步任务、政策雷达配置和报告摘要。</p></div>;
-}
+          {active === 'overview' && <div className="tab-content">
+            <div className="kpi-grid">
+              <article><span>德国制参考成绩</span><b>{Number(result.grade.value).toFixed(2)}</b><small>{result.grade.process}</small></article>
+              <article><span>示范院校</span><b>3 个</b><small>TUM / Saarland University / TH Köln + 引擎可扩展</small></article>
+              <article><span>最高匹配分</span><b>{Math.max(...result.matching.map(m => m.matchScore))}</b><small>启发式评分，不代表录取概率</small></article>
+            </div>
+            <div className="formula-card">
+              <h3>输入 → 计算 → 输出证据链</h3>
+              <p><b>公式：</b>{result.grade.formula}</p>
+              <p><b>计算：</b>{result.grade.process}</p>
+              <p><b>边界：</b>{result.grade.remark}；正式申请以学校或 uni-assist 认定为准。</p>
+            </div>
+            <div className="honesty-card">
+              <h3>本次 Demo 的诚实边界</h3>
+              <ul>
+                <li>成绩换算和评分为浏览器/接口真实计算。</li>
+                <li>院校数量按“三个示范院校 + 引擎可扩展”表达，不写 400 所/100 所。</li>
+                <li>效率只表达为“初筛从数天缩短到分钟级（基于作者真实申请经历对比）”。</li>
+                <li>政策雷达为 Demo 配置展示，待长期运行验证。</li>
+              </ul>
+            </div>
+          </div>}
 
-function Result({ active, demo }) {
-  if (active === 'summary') return <Summary demo={demo} />;
-  if (active === 'programs') return <Programs demo={demo} />;
-  if (active === 'scoring') return <Scoring demo={demo} />;
-  if (active === 'dashboard') return <Dashboard demo={demo} />;
-  if (active === 'radar') return <RadarView demo={demo} />;
-  return <Report demo={demo} />;
-}
+          {active === 'programs' && <div className="cards">
+            {result.programs.map((p, i) => {
+              const m = result.matching[i];
+              return <article className="program-card" key={p.id}>
+                <div className="program-title">
+                  <div><span>{p.universityType}</span><h3>{p.university}</h3><p>{p.programName}</p></div>
+                  <b>{m.matchScore} / 100</b>
+                </div>
+                <div className="meta"><span>{m.tier}</span><span>风险：{m.riskLevel}</span><span>{p.teachingLanguage}</span></div>
+                <h4>推荐理由</h4><ul>{m.recommendationReasons.map(x => <li key={x}>{x}</li>)}</ul>
+                <h4>风险证据</h4><ul className="risk-list">{m.riskEvidence.map(x => <li key={x}>{x}</li>)}</ul>
+                <h4>字段级可信度</h4><FieldConfidenceTable program={p} />
+                <h4>下一步任务</h4><ol>{m.nextTasks.map(x => <li key={x}>{x}</li>)}</ol>
+                <a href={p.sourceUrl} target="_blank" rel="noreferrer">打开来源入口</a>
+              </article>;
+            })}
+          </div>}
 
-function Summary({ demo }) {
-  const best = demo.matching?.[0];
-  return <div className="stack">
-    <div className="kpi-grid">
-      <Kpi label="德国制参考成绩" value={demo.grade?.value ?? '--'} hint="修正巴伐利亚公式，最终以学校认定为准" tone="blue" />
-      <Kpi label="综合推荐档位" value={best?.tier || '--'} hint="基于 8 项启发式评分" />
-      <Kpi label="初筛项目数" value={demo.programs?.length || 0} hint="当前为演示种子数据" />
-      <Kpi label="高优先级风险" value="APS / ECTS / Deadline" hint="提交前需官网复核" tone="warn" />
-    </div>
-    <div className="summary-card">
-      <h3>输入 → 输出</h3>
-      <p><strong>输入：</strong>{demo.profile?.major}，目标 {demo.profile?.targetDirection}，{demo.profile?.crossMajor}，英语 {demo.profile?.english || '待补充'}，APS {demo.profile?.apsStatus || '待补充'}。</p>
-      <p><strong>输出：</strong>{demo.executiveSummary?.mainConclusion}</p>
-      <p><strong>边界：</strong>{demo.executiveSummary?.boundary}</p>
-    </div>
-    <div className="summary-card opc">
-      <h3>对照 OPC 竞赛评分维度</h3>
-      <div className="opc-grid">
-        <span>场景真实性与闭环验证 35%</span><span>真实成绩计算 + 完整初筛闭环 + 诚信标注</span>
-        <span>商业价值与可持续 30%</span><span>B2C/B2B 双路径 + 可复用评分模型</span>
-        <span>工具整合与替代 25%</span><span>数据分析 / 浏览器核验 / 看板 / 政策雷达 / PPT 工作流</span>
-        <span>表达清晰 10%</span><span>3 秒可懂首屏 + 核心结论卡</span>
-      </div>
-    </div>
-  </div>;
-}
+          {active === 'scoring' && <div className="tab-content">
+            <h3>启发式评分模型：用于初筛，不代表录取概率</h3>
+            <p className="boundary-box">评分由成绩、专业相关度、课程/ECTS、语言、APS、项目经历、deadline 风险和数据可信度构成。当前未做历史录取结果校准，因此不声称准确率。</p>
+            {result.matching.map(m => <section className="score-section" key={m.programId}>
+              <h4>{m.university} · {m.programName} <span>{m.matchScore} / 100</span></h4>
+              <ScoreParts parts={m.scoreParts} />
+            </section>)}
+          </div>}
 
-function Programs({ demo }) {
-  return <div className="program-list">{demo.programs.map((p, i) => {
-    const m = demo.matching[i];
-    return <article className="program-card" key={p.id}>
-      <div className="program-head"><div><h3>{p.university}</h3><p>{p.programName}</p></div><div className="score-pill">{m.matchScore}/100</div></div>
-      <div className="badges"><Badge tone="blue">{p.universityType}</Badge><Badge tone="green">{m.tier}</Badge><Badge tone="yellow">{p.reviewRequired ? '待官网复核' : '已核验'}</Badge><Badge tone="gray">演示数据</Badge></div>
-      <div className="two-col">
-        <InfoBlock title="推荐理由" items={m.recommendationReasons} />
-        <InfoBlock title="风险证据" items={m.riskEvidence} danger />
-      </div>
-      <InfoBlock title="下一步任务" items={m.nextTasks} />
-      <div className="field-confidence">
-        <h4>字段可信度</h4>
-        {Object.entries(p.fieldConfidence || {}).map(([k, v]) => <span key={k}>{k}：<b>{v}</b></span>)}
-      </div>
-      <a className="source-link" href={p.sourceUrl} target="_blank" rel="noreferrer"><Globe2 size={16}/>来源线索：{p.sourceUrl}</a>
-    </article>;
-  })}</div>;
-}
+          {active === 'dashboard' && <div className="tab-content">
+            <h3>多校作战看板</h3>
+            <table><thead><tr><th>学校</th><th>梯度</th><th>当前状态</th><th>阻塞项</th><th>下一步</th><th>优先级</th></tr></thead><tbody>
+              {result.dashboard.map(r => <tr key={r.university}><td>{r.university}</td><td>{r.tier}</td><td>{r.status}</td><td>{r.blocker}</td><td>{r.nextStep}</td><td>{r.priority}</td></tr>)}
+            </tbody></table>
+          </div>}
 
-function InfoBlock({ title, items = [], danger }) {
-  return <div className={`info-block ${danger ? 'danger' : ''}`}><h4>{title}</h4><ul>{items.map((item, idx) => <li key={idx}>{item}</li>)}</ul></div>;
-}
+          {active === 'radar' && <div className="tab-content">
+            <h3>政策雷达配置原型</h3>
+            <p className="boundary-box">当前状态：Demo 配置展示，待长期运行验证。正式版需接入定时抓取、页面差异检测、通知和历史版本留存。</p>
+            <div className="radar-box"><b>{result.policyRadar.taskName}</b><span>频率：{result.policyRadar.frequency}</span><span>{result.policyRadar.systemTaskStatus}</span></div>
+            <table><thead><tr><th>日期</th><th>学校</th><th>检查项</th><th>影响</th><th>建议动作</th></tr></thead><tbody>
+              {result.policyRadar.firstRun.map((r, i) => <tr key={i}><td>{r.date}</td><td>{r.university}</td><td>{r.checks}</td><td>{r.impact}</td><td>{r.suggestedAction}</td></tr>)}
+            </tbody></table>
+          </div>}
 
-function Scoring({ demo }) {
-  return <div className="stack">
-    <div className="summary-card">
-      <h3>评分模型依据</h3>
-      <p>8 项权重参考德国硕士申请实际审核逻辑：成绩与课程/ECTS 是主要学术硬门槛，语言和 APS 是硬性材料，项目经历为加分项；deadline 风险和数据可信度用于约束申请节奏与信息可靠性。该模型是启发式初筛，不代表学校录取模型，也不提供录取概率保证。</p>
-    </div>
-    {demo.matching.map((m) => <div className="score-card" key={m.programId}>
-      <div className="program-head"><div><h3>{m.university}</h3><p>{m.programName}</p></div><div className="score-pill">{m.matchScore}/100</div></div>
-      <div className="score-grid">{m.scoreParts.map(part => <div className="score-row" key={part.key}><div><strong>{part.key}</strong><small>{part.reason}</small></div><span>{part.score}/{part.weight}</span></div>)}</div>
-    </div>)}
-  </div>;
-}
-
-function Dashboard({ demo }) {
-  return <div className="table-wrap"><table><thead><tr><th>学校</th><th>项目</th><th>梯度</th><th>申请路径</th><th>Deadline</th><th>阻塞项</th><th>下一步</th><th>优先级</th></tr></thead><tbody>{demo.dashboard.map((r, i) => <tr key={i}><td>{r.university}</td><td>{r.programName}</td><td>{r.tier}</td><td>{r.applicationPath}</td><td>{r.deadline}</td><td>{r.blocker}</td><td>{r.nextStep}</td><td>{r.priority}</td></tr>)}</tbody></table></div>;
-}
-
-function RadarView({ demo }) {
-  const radar = demo.policyRadar;
-  return <div className="stack"><div className="summary-card"><h3><Radar size={18}/> {radar.taskName}</h3><p><strong>频率：</strong>{radar.frequency}</p><p><strong>状态：</strong>{radar.systemTaskStatus}</p></div><div className="table-wrap"><table><thead><tr><th>日期</th><th>学校</th><th>检查项</th><th>当前信息</th><th>影响</th><th>建议动作</th></tr></thead><tbody>{radar.firstRun.map((r, i) => <tr key={i}><td>{r.date}</td><td>{r.university}</td><td>{r.checks}</td><td>{r.currentInfo}</td><td>{r.impact}</td><td>{r.suggestedAction}</td></tr>)}</tbody></table></div></div>;
-}
-
-function Report({ demo }) {
-  const e = demo.efficiency?.summary || {};
-  return <div className="stack">
-    <div className="kpi-grid"><Kpi label="传统流程" value={e.traditional}/><Kpi label="Demo 流程" value={e.system}/><Kpi label="效率提升估算" value={`${e.improvement}x`}/><Kpi label="可溯源信息" value={e.traceableItems}/></div>
-    <div className="summary-card"><h3>报告摘要</h3><p>本次 Demo 共覆盖 {e.projects} 个项目，识别 {e.highRisks} 类高风险事项，生成 {e.deliverables} 类交付物。所有种子项目均保留来源线索与待复核标注，避免将未核验信息包装成确定结论。</p></div>
-    <div className="draft-box"><h3>文书/课程匹配示例</h3><pre>{demo.drafts?.courseMappingStatement}</pre></div>
+          {active === 'report' && <div className="tab-content">
+            <h3>报告摘要：以诚实口径展示效率与质量</h3>
+            <div className="summary-card"><b>{result.efficiency.summary.efficiencyStatement}</b><p>{result.efficiency.summary.quantificationBoundary}</p></div>
+            <table><thead><tr><th>环节</th><th>传统方式</th><th>DeutschOS Demo</th><th>证据边界</th></tr></thead><tbody>
+              {result.efficiency.rows.map(r => <tr key={r.stage}><td>{r.stage}</td><td>{r.manual}</td><td>{r.system}</td><td>{r.evidence}</td></tr>)}
+            </tbody></table>
+            <h4>质量边界</h4><ul>{result.efficiency.quality.map(q => <li key={q.metric}><b>{q.metric}：</b>{q.count}</li>)}</ul>
+          </div>}
+        </>}
+      </section>
+    </main>
   </div>;
 }
 

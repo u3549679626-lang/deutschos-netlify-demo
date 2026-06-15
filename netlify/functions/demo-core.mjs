@@ -306,35 +306,28 @@ export function buildPolicyRadar(profile = {}, programs = demoPrograms) {
 
 export function buildEfficiencyReport() {
   const rows = [
-    ['背景建档', 2, 10], ['官网核验', 8, 25], ['成绩换算', 1, 3], ['课程匹配', 5, 8],
-    ['文书初稿', 6, 10], ['作战看板', 2, 5], ['政策雷达', 3, 5], ['对照报告', 2, 4]
-  ].map(([stage, manualHours, systemMinutes]) => ({
-    stage,
-    manual: `${manualHours} 小时`,
-    system: `${systemMinutes} 分钟`,
-    improvement: Number(((manualHours * 60) / systemMinutes).toFixed(1)),
-    note: 'Demo 估算值；正式项目可按日志自动统计'
-  }));
-  const manualTotal = rows.reduce((s, r) => s + Number(r.manual.split(' ')[0]), 0);
-  const systemTotalMinutes = rows.reduce((s, r) => s + Number(r.system.split(' ')[0]), 0);
+    { stage: '背景建档', manual: '通常需要反复整理材料', system: '分钟级生成结构化摘要', evidence: '基于作者真实申请经历对比' },
+    { stage: '官网核验', manual: '通常需要跨多个官网逐项查找', system: 'Demo 可集中列出核验字段与来源入口', evidence: '当前为示范院校流程验证' },
+    { stage: '成绩换算', manual: '需要人工套公式并检查参数', system: '输入 84/100/60 后实时得到 2.20', evidence: '公式真实计算，参数来自用户输入' },
+    { stage: '课程匹配', manual: '需要逐课程对照项目要求', system: '先生成启发式风险清单', evidence: '仍需成绩单与课程描述人工复核' },
+    { stage: '材料任务', manual: '容易遗漏 APS/VPD/deadline', system: '自动生成下一步任务与阻塞项', evidence: 'Demo 配置展示' },
+    { stage: '报告交付', manual: '需要重新整理成文档', system: '可下载初筛诊断报告', evidence: '当前 Web Demo 已支持' }
+  ];
   return {
     rows,
     summary: {
-      traditional: `${manualTotal} 小时（约 ${(manualTotal / 8).toFixed(1)} 个工作日）`,
-      system: `${systemTotalMinutes} 分钟（约 ${(systemTotalMinutes / 60).toFixed(1)} 小时）`,
-      improvement: Number(((manualTotal * 60) / systemTotalMinutes).toFixed(1)),
-      traceableItems: 42,
-      projects: 3,
-      highRisks: 5,
-      deliverables: 9
+      efficiencyStatement: '初筛从数天缩短到分钟级（基于作者真实申请经历对比）',
+      quantificationBoundary: '未做大样本计时实验，因此不使用精确倍数、准确率或覆盖院校数量夸大表达。',
+      projects: 'TUM / Saarland University / TH Köln 三个示范院校 + 引擎可扩展',
+      highRisks: 'APS、deadline、VPD/uni-assist、课程/ECTS、语言要求等关键风险被集中列出',
+      deliverables: '页面结果 + 可下载初筛诊断报告 + 后续 PPT 截图材料'
     },
     quality: [
-      { metric: '标注官网来源的信息条数', count: 24 },
-      { metric: '标注抓取日期的信息条数', count: 12 },
-      { metric: '标注待人工核验的信息条数', count: 18 },
-      { metric: '生成表格数量', count: 5 },
-      { metric: '生成文书数量', count: 2 },
-      { metric: '生成可视化/看板数量', count: 2 }
+      { metric: '示范院校数量', count: '3 个示范院校' },
+      { metric: '成绩换算样例', count: '84/100/60 → 2.20' },
+      { metric: '可信度机制', count: '来源链接 / 抓取日期 / 演示数据 / 待人工核实' },
+      { metric: '准确率说明', count: '未做大样本验证，不声称准确率' },
+      { metric: '政策雷达说明', count: 'Demo 配置展示，待长期运行验证' }
     ]
   };
 }
