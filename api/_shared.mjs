@@ -1,4 +1,4 @@
-import { runFullDemo } from '../demo-core.mjs';
+import { runFullDemo } from './demo-core.mjs';
 
 export function readJson(req) {
   if (req.body && typeof req.body === 'object') return req.body;
