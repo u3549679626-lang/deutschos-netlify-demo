@@ -3,13 +3,21 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const api = async (path, payload = {}) => {
-  const res = await fetch(`/.netlify/functions/api${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error(`API ${path} failed`);
-  return res.json();
+  const request = async (base) => {
+    const res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`API ${path} failed via ${base}`);
+    return res.json();
+  };
+  try {
+    return await request('/api');
+  } catch (error) {
+    // 兼容旧 Netlify 部署；Vercel 发布时默认走 /api。
+    return request('/.netlify/functions/api');
+  }
 };
 
 const demoProfile = {
@@ -29,13 +37,83 @@ const demoProfile = {
 
 const tabs = [
   ['overview', '核心结论'],
-  ['programs', '项目卡'],
+  ['experts', '专家团会诊'],
+  ['programs', '项目核验'],
   ['scoring', '评分依据'],
   ['dashboard', '作战看板'],
   ['radar', '政策雷达'],
   ['report', '报告摘要'],
   ['ai', 'AI 顾问']
 ];
+
+
+const expertRoles = [
+  {
+    name: 'DeutschOS｜申请总控专家',
+    role: '统筹申请者档案、项目匹配、官网核验、文书与风险控制，决定是否进入顾问交付。',
+    output: '总控结论 / 交付状态 / 顾问复核清单',
+    status: '待顾问复核',
+    risk: '中'
+  },
+  {
+    name: '申请者背景画像专家',
+    role: '结构化本科背景、成绩、语言、APS、经历和跨专业说明。',
+    output: '申请者画像 / 优势风险 / 待补材料',
+    status: '已完成初筛',
+    risk: '中'
+  },
+  {
+    name: '院校项目核验专家',
+    role: '核验学校官网、项目页面、deadline、语言要求、申请路径、APS/VPD/uni-assist。',
+    output: '项目核验表 / 来源链接 / 抓取日期 / 待人工核实项',
+    status: '部分待官网复核',
+    risk: '高'
+  },
+  {
+    name: '课程匹配与风险诊断专家',
+    role: '比对课程模块、ECTS/学分、专业相关性与跨专业风险。',
+    output: '课程匹配分 / 缺口模块 / 补强建议',
+    status: '待课程描述补充',
+    risk: '中'
+  },
+  {
+    name: '申请文书与材料表达专家',
+    role: '基于真实经历生成 Motivation Letter、课程匹配说明与材料表达建议。',
+    output: '文书初稿 / 素材使用说明 / 真实性检查',
+    status: '可生成初稿',
+    risk: '中'
+  },
+  {
+    name: '申请任务看板与汇报专家',
+    role: '拆解 APS、语言、VPD、网申、材料、文书和 deadline 任务。',
+    output: '多校作战看板 / 本周任务 / 阻塞项',
+    status: '已生成看板',
+    risk: '中'
+  },
+  {
+    name: '申请风控与合规专家',
+    role: '检查录取承诺、来源缺失、政策过期、路径误判和人工复核边界。',
+    output: '风险门禁 / 合规声明 / 不可交付项',
+    status: '待最终门禁',
+    risk: '高'
+  }
+];
+
+const buildConsultantReview = (result) => {
+  const pendingSources = (result?.programs || []).reduce((sum, program) => {
+    const values = Object.values(program.fieldConfidence || {});
+    return sum + values.filter(v => /待|人工|复核|演示|入口/.test(String(v))).length;
+  }, 0);
+  const grade = result?.grade?.value ? Number(result.grade.value).toFixed(2) : '待计算';
+  return [
+    ['申请者信息是否完整', result?.profile?.apsStatus === '已通过' ? '基本完整' : '待补充', `APS 状态：${result?.profile?.apsStatus || '未提供'}；语言和课程描述仍需顾问确认。`],
+    ['成绩换算是否标注参考性质', '已完成', `德国制参考成绩 ${grade}，仅用于初筛，正式认定以学校或 uni-assist 为准。`],
+    ['项目要求是否有官网来源', pendingSources > 0 ? '部分待复核' : '已核验', `当前存在 ${pendingSources} 个字段需要官网/官方平台二次确认。`],
+    ['课程匹配是否存在硬缺口', '待确认', '需上传完整成绩单和课程描述后判断数学、统计、计算机、专业核心课学分。'],
+    ['文书是否基于真实经历', '待顾问审核', '文书只能使用申请者已提供经历，不编造科研、实习、获奖或项目。'],
+    ['是否可交付学生', pendingSources > 0 ? '暂不可直接交付' : '可进入顾问复核', '专家团输出是顾问审核前初筛，不替代人工判断，不承诺录取。']
+  ];
+};
 
 const statusClass = (value = '') => {
   if (/已核验|已提供|真实计算/.test(value)) return 'ok';
@@ -56,7 +134,7 @@ const downloadText = (filename, text) => {
 };
 
 function buildMarkdownReport(result) {
-  if (!result?.ok) return '# DeutschOS 初筛诊断报告\n\n暂无有效结果。';
+  if (!result?.ok) return '# DeutschOS 专家团顾问工作台诊断报告\n\n暂无有效结果。';
   const p = result.profile || {};
   const g = result.grade || {};
   const programs = result.programs || [];
@@ -64,13 +142,12 @@ function buildMarkdownReport(result) {
   const generated = result.generatedAt || new Date().toISOString();
   const programLines = programs.map((program, i) => {
     const m = matching[i] || {};
-    const fields = Object.entries(program.fieldConfidence || {})
-      .map(([k, v]) => `  - ${k}: ${v}`)
-      .join('\n');
+    const fields = Object.entries(program.fieldConfidence || {}).map(([k, v]) => `  - ${k}: ${v}`).join('\n');
     return `## ${i + 1}. ${program.university} - ${program.programName}\n\n- 类型：${program.universityType}\n- 匹配分：${m.matchScore ?? '待评分'} / 100\n- 梯度：${m.tier || '待评估'}\n- 风险等级：${m.riskLevel || '待评估'}\n- 来源：${program.sourceUrl}\n- 最近生成/核验日期：${String(program.checkedAt || generated).slice(0, 10)}\n- 项目数据边界：演示种子数据，申请前必须官网复核\n\n### 推荐理由\n${(m.recommendationReasons || []).map(x => `- ${x}`).join('\n')}\n\n### 风险证据\n${(m.riskEvidence || []).map(x => `- ${x}`).join('\n')}\n\n### 字段级可信度\n${fields}\n\n### 下一步任务\n${(m.nextTasks || []).map(x => `- ${x}`).join('\n')}\n`;
   }).join('\n');
+  const expertLines = expertRoles.map(expert => `- ${expert.name}：${expert.status}；输出：${expert.output}`).join('\n');
 
-  return `# DeutschOS 德国硕士申请初筛诊断报告\n\n生成时间：${generated}\n\n> 当前报告为 MVP 初筛诊断，不代表录取概率，不替代学校、uni-assist 或 APS 的官方审核。\n\n## 一、申请者输入摘要\n\n- 姓名：${p.name || '未填写'}\n- 本科院校：${p.university || '未填写'}\n- 本科专业：${p.major || '未填写'}\n- 目标方向：${p.targetDirection || '未填写'}\n- 跨专业状态：${p.crossMajor || '未填写'}\n- 语言状态：${p.english || '未填写'}\n- APS 状态：${p.apsStatus || '未填写'}\n\n## 二、德国制成绩换算\n\n- 原始均分：${g.rawAverage}\n- 满分：${g.maxScore}\n- 及格线：${g.passScore}\n- 公式：${g.formula}\n- 计算过程：${g.process}\n- 德国制参考成绩：**${g.value}**\n- 参数来源：${g.parameterSource}\n- 备注：${g.remark}\n\n## 三、示范项目初筛结果\n\n当前 Demo 使用 **TUM / Saarland University / TH Köln 三个示范院校 + 引擎可扩展** 验证流程闭环，不声称已覆盖大量院校。\n\n${programLines}\n\n## 四、可信度与边界\n\n- 成绩换算：真实计算。\n- 项目要求：演示种子数据 + 来源入口，提交前必须官网复核。\n- 评分模型：启发式初筛模型，用于风险排序，不代表录取概率。\n- 政策雷达：Demo 配置展示，待长期运行验证。\n- 效率表达：初筛从数天缩短到分钟级（基于作者真实申请经历对比），未使用无依据精确倍数。\n\n## 五、建议下一步\n\n1. 上传或整理成绩单与课程描述，补齐数学/统计/计算机/专业核心 ECTS。\n2. 逐项目打开 admission、deadline、language、application procedure 页面并保存截图。\n3. 推进 APS，核对是否需要 VPD / uni-assist / 直申。\n4. 将风险证据转化为 Motivation Letter 与课程匹配说明。\n`;
+  return `# DeutschOS 专家团顾问工作台诊断报告\n\n生成时间：${generated}\n\n> 当前报告由 DeutschOS 德国硕士申请专家团生成，定位为留学顾问审核前初筛材料；不承诺录取，不替代学校官网、uni-assist、DAAD、APS 或顾问人工判断。\n\n## 一、申请者输入摘要\n\n- 姓名：${p.name || '未填写'}\n- 本科院校：${p.university || '未填写'}\n- 本科专业：${p.major || '未填写'}\n- 目标方向：${p.targetDirection || '未填写'}\n- 跨专业状态：${p.crossMajor || '未填写'}\n- 语言状态：${p.english || '未填写'}\n- APS 状态：${p.apsStatus || '未填写'}\n\n## 二、专家团会诊状态\n\n${expertLines}\n\n## 三、德国制成绩换算\n\n- 原始均分：${g.rawAverage}\n- 满分：${g.maxScore}\n- 及格线：${g.passScore}\n- 公式：${g.formula}\n- 计算过程：${g.process}\n- 德国制参考成绩：**${g.value}**\n- 参数来源：${g.parameterSource}\n- 备注：${g.remark}\n\n## 四、示范项目核验与初筛结果\n\n当前 Demo 使用 **TUM / Saarland University / TH Köln 三个示范院校 + 引擎可扩展** 验证流程闭环，不声称已覆盖大量院校。所有 deadline、语言要求、申请路径、NC、APS、VPD、uni-assist 信息均须以官网或官方平台最终信息为准。\n\n${programLines}\n\n## 五、顾问审核门禁\n\n${buildConsultantReview(result).map(([item, status, note]) => `- ${item}：${status}。${note}`).join('\n')}\n\n## 六、可信度与边界\n\n- 成绩换算：真实计算，但仅为参考值。\n- 项目要求：演示种子数据 + 来源入口，提交前必须官网复核。\n- 评分模型：启发式初筛模型，用于风险排序，不代表录取概率。\n- 政策雷达：Demo 配置展示，待长期运行验证。\n- 顾问责任：专家团输出用于提高整理效率，最终交付前必须由顾问复核。\n\n## 七、建议下一步\n\n1. 上传或整理成绩单与课程描述，补齐数学/统计/计算机/专业核心 ECTS。\n2. 逐项目打开 admission、deadline、language、application procedure 页面并保存截图。\n3. 推进 APS，核对是否需要 VPD / uni-assist / 直申。\n4. 将风险证据转化为 Motivation Letter 与课程匹配说明。\n5. 由顾问完成最终审核后，再交付给申请者。\n`;
 }
 
 function FieldConfidenceTable({ program }) {
@@ -149,19 +226,19 @@ function App() {
 
   return <div className="app">
     <header className="hero">
-      <div className="eyebrow">DeutschOS MVP · 可信初筛 / 风险证据 / 材料作战</div>
-      <h1>德国硕士申请初筛与材料作战工作台</h1>
-      <p className="lead">输入申请者背景，生成德国制成绩、示范项目匹配、风险证据、下一步任务和可信度标注。</p>
+      <div className="eyebrow">DeutschOS MVP · 专家团会诊 / 顾问审核 / 风险证据</div>
+      <h1>德国硕士申请专家团顾问工作台</h1>
+      <p className="lead">输入申请者背景后，由 DeutschOS 专家团完成初筛会诊，输出项目核验、课程风险、申请任务和顾问审核清单。</p>
       <div className="hero-tags">
         <span>真实计算：84/100/60 → 2.20</span>
         <span>示范院校：TUM / Saarland / TH Köln</span>
-        <span>诚信边界：来源、日期、待复核</span>
+        <span>顾问门禁：来源、日期、待人工核实</span>
       </div>
       <div className="hero-actions">
         <button onClick={() => runDemo(true)} disabled={loading}>{loading ? '生成中…' : '一键运行完整 Demo'}</button>
         <button className="ghost" onClick={() => document.querySelector('#input-panel')?.scrollIntoView({ behavior: 'smooth' })}>手动输入背景</button>
       </div>
-      <p className="boundary">本 Demo 使用三个示范院校验证流程闭环，后续引擎可扩展；不声称覆盖大量院校，不声称录取概率预测。</p>
+      <p className="boundary">本 Demo 展示“专家团初筛 + 顾问复核”的留学中介工作流；专家团输出不等于最终申请结论，不承诺录取。</p>
     </header>
 
     <main className="layout">
@@ -191,10 +268,10 @@ function App() {
       <section className="panel result-panel">
         <div className="result-head">
           <div>
-            <h2>2. 初筛结果与可解释报告</h2>
-            <p>核心目标：把“为什么推荐 / 风险在哪 / 下一步做什么”讲清楚。</p>
+            <h2>2. 专家团初筛与顾问审核结果</h2>
+            <p>核心目标：把“专家如何分工 / 风险在哪 / 顾问如何把关 / 下一步做什么”讲清楚。</p>
           </div>
-          {result?.ok && <div className="result-actions"><button className="ai-button" onClick={requestAiAdvice} disabled={aiLoading}>{aiLoading ? 'AI 生成中…' : '生成 AI 顾问建议'}</button><button className="download" onClick={() => downloadText('deutschos-initial-screening-report.md', reportMarkdown)}>下载初筛诊断报告</button></div>}
+          {result?.ok && <div className="result-actions"><button className="ai-button" onClick={requestAiAdvice} disabled={aiLoading}>{aiLoading ? 'AI 生成中…' : '生成 AI 顾问建议'}</button><button className="download" onClick={() => downloadText('deutschos-expert-workbench-report.md', reportMarkdown)}>下载专家团诊断报告</button></div>}
         </div>
 
         {!result?.ok && <div className="empty">
@@ -210,6 +287,7 @@ function App() {
               <article><span>德国制参考成绩</span><b>{Number(result.grade.value).toFixed(2)}</b><small>{result.grade.process}</small></article>
               <article><span>示范院校</span><b>3 个</b><small>TUM / Saarland University / TH Köln + 引擎可扩展</small></article>
               <article><span>最高匹配分</span><b>{Math.max(...result.matching.map(m => m.matchScore))}</b><small>启发式评分，不代表录取概率</small></article>
+              <article><span>专家团状态</span><b>7 位</b><small>已完成初筛会诊，等待顾问最终审核</small></article>
             </div>
             <div className="formula-card">
               <h3>输入 → 计算 → 输出证据链</h3>
@@ -225,6 +303,42 @@ function App() {
                 <li>效率只表达为“初筛从数天缩短到分钟级（基于作者真实申请经历对比）”。</li>
                 <li>政策雷达为 Demo 配置展示，待长期运行验证。</li>
               </ul>
+            </div>
+          </div>}
+
+
+          {active === 'experts' && <div className="tab-content">
+            <div className="section-title-row">
+              <div>
+                <h3>专家团会诊：AI 初筛输出，顾问最终把关</h3>
+                <p>基于你已配置的 DeutschOS 德国硕士申请专家团，本区将留学中介服务拆成总控、画像、核验、课程、文书、看板和风控七个环节。</p>
+              </div>
+              <span className="review-badge">顾问审核前初筛</span>
+            </div>
+            <div className="expert-grid">
+              {expertRoles.map(expert => <article className="expert-card" key={expert.name}>
+                <div className="expert-card-head">
+                  <h4>{expert.name}</h4>
+                  <span className={`pill ${expert.risk === '高' ? 'warn' : 'info'}`}>风险：{expert.risk}</span>
+                </div>
+                <p>{expert.role}</p>
+                <dl>
+                  <dt>输出</dt><dd>{expert.output}</dd>
+                  <dt>状态</dt><dd><span className={`pill ${statusClass(expert.status)}`}>{expert.status}</span></dd>
+                </dl>
+              </article>)}
+            </div>
+
+            <div className="consultant-gate">
+              <h3>顾问审核门禁</h3>
+              <p className="boundary-box">专家团负责把复杂申请信息整理成可复核的初筛材料；留学顾问负责最终判断、官网复核、材料真实性确认和交付口径把关。</p>
+              <table><thead><tr><th>审核项</th><th>状态</th><th>顾问备注</th></tr></thead><tbody>
+                {buildConsultantReview(result).map(([item, status, note]) => <tr key={item}><td>{item}</td><td><span className={`pill ${statusClass(status)}`}>{status}</span></td><td>{note}</td></tr>)}
+              </tbody></table>
+            </div>
+
+            <div className="workflow-strip">
+              {['申请者输入', '专家团会诊', '官网/材料复核', '顾问审核', '方案交付'].map((step, index) => <span key={step}>{index + 1}. {step}</span>)}
             </div>
           </div>}
 
