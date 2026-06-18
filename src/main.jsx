@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -15,405 +16,284 @@ const api = async (path, payload = {}) => {
   try {
     return await request('/api');
   } catch (error) {
-    // 兼容旧 Netlify 部署；Vercel 发布时默认走 /api。
     return request('/.netlify/functions/api');
   }
 };
 
-const demoProfile = {
+const accounts = [
+  { role: 'student', label: '申请者', email: 'student@demo.com', password: 'demo123', name: 'Demo Applicant' },
+  { role: 'consultant', label: '顾问', email: 'consultant@demo.com', password: 'demo123', name: 'DeutschOS 顾问' },
+  { role: 'admin', label: '管理员', email: 'admin@demo.com', password: 'demo123', name: '系统管理员' }
+];
+
+const baseApplicant = {
+  id: 'app-001',
   name: 'Demo Applicant',
+  email: 'student@demo.com',
   university: '中国本科院校（演示）',
   major: '信息管理与信息系统 / 商科与数据方向交叉背景',
   targetDirection: '数据科学与人工智能',
+  intake: 'Winter Semester 2026',
   crossMajor: '部分跨专业',
   averageScore: 84,
   maxScore: 100,
   passScore: 60,
-  english: 'IELTS 6.5（演示输入，需按项目官网复核）',
+  germanGrade: '2.20',
+  english: 'IELTS 6.5（需按项目官网复核小分要求）',
   german: '未提供',
   apsStatus: '未开始',
-  experiences: 'Python 数据分析课程项目、用户行为分析 Demo、课程论文与毕业设计素材（演示）'
+  currentStage: '材料准备与项目复核',
+  progress: 42,
+  consultant: 'DeutschOS 顾问',
+  lastPublished: '2026-06-18'
 };
 
-const tabs = [
-  ['overview', '核心结论'],
-  ['experts', '专家团会诊'],
-  ['programs', '项目核验'],
-  ['scoring', '评分依据'],
-  ['dashboard', '作战看板'],
-  ['radar', '政策雷达'],
-  ['report', '报告摘要'],
-  ['ai', 'AI 顾问']
+const materials = [
+  { name: '成绩单', status: '已上传', owner: '申请者', note: '需补英文版或翻译件状态' },
+  { name: '课程描述', status: '待补充', owner: '申请者', note: '课程匹配诊断的关键阻塞项' },
+  { name: 'CV', status: '待顾问修改', owner: '顾问', note: '已有素材，需按德国项目重排' },
+  { name: 'IELTS / TOEFL', status: '待确认', owner: '申请者', note: '需上传官方成绩单并核对小分' },
+  { name: 'APS', status: '未开始', owner: '申请者', note: '本周高优先级风险' },
+  { name: '推荐信', status: '待确认推荐人', owner: '申请者', note: '建议准备 2 位推荐人' }
 ];
 
-
-const expertRoles = [
+const approvedPrograms = [
   {
-    name: 'DeutschOS｜申请总控专家',
-    role: '统筹申请者档案、项目匹配、官网核验、文书与风险控制，决定是否进入顾问交付。',
-    output: '总控结论 / 交付状态 / 顾问复核清单',
-    status: '待顾问复核',
-    risk: '中'
+    university: 'Technical University of Munich',
+    program: 'Data Engineering and Analytics',
+    tier: '冲刺',
+    status: '待官网复核',
+    deadline: '待官网确认',
+    path: '学校官网 / 可能涉及 VPD，待复核',
+    risk: '高',
+    source: 'https://www.tum.de/',
+    consultantNote: '仅作为冲刺样例保留，必须复核课程 ECTS 与申请路径。'
   },
   {
-    name: '申请者背景画像专家',
-    role: '结构化本科背景、成绩、语言、APS、经历和跨专业说明。',
-    output: '申请者画像 / 优势风险 / 待补材料',
-    status: '已完成初筛',
-    risk: '中'
+    university: 'Saarland University',
+    program: 'Data Science and Artificial Intelligence',
+    tier: '匹配',
+    status: '材料准备中',
+    deadline: '待官网确认',
+    path: '官网申请入口，待确认是否需要 uni-assist',
+    risk: '中',
+    source: 'https://www.uni-saarland.de/',
+    consultantNote: '与目标方向相关性较强，需补充统计/编程课程描述。'
   },
   {
-    name: '院校项目核验专家',
-    role: '核验学校官网、项目页面、deadline、语言要求、申请路径、APS/VPD/uni-assist。',
-    output: '项目核验表 / 来源链接 / 抓取日期 / 待人工核实项',
-    status: '部分待官网复核',
-    risk: '高'
-  },
-  {
-    name: '课程匹配与风险诊断专家',
-    role: '比对课程模块、ECTS/学分、专业相关性与跨专业风险。',
-    output: '课程匹配分 / 缺口模块 / 补强建议',
-    status: '待课程描述补充',
-    risk: '中'
-  },
-  {
-    name: '申请文书与材料表达专家',
-    role: '基于真实经历生成 Motivation Letter、课程匹配说明与材料表达建议。',
-    output: '文书初稿 / 素材使用说明 / 真实性检查',
-    status: '可生成初稿',
-    risk: '中'
-  },
-  {
-    name: '申请任务看板与汇报专家',
-    role: '拆解 APS、语言、VPD、网申、材料、文书和 deadline 任务。',
-    output: '多校作战看板 / 本周任务 / 阻塞项',
-    status: '已生成看板',
-    risk: '中'
-  },
-  {
-    name: '申请风控与合规专家',
-    role: '检查录取承诺、来源缺失、政策过期、路径误判和人工复核边界。',
-    output: '风险门禁 / 合规声明 / 不可交付项',
-    status: '待最终门禁',
-    risk: '高'
+    university: 'TH Köln',
+    program: 'Web and Data Science',
+    tier: '稳妥',
+    status: '待人工核实',
+    deadline: '待官网确认',
+    path: '官网 / 申请平台待核验',
+    risk: '中',
+    source: 'https://www.th-koeln.de/',
+    consultantNote: 'FH/HAW 类型可作为稳妥方向，但官方页面需重新核验。'
   }
 ];
 
-const buildConsultantReview = (result) => {
-  const pendingSources = (result?.programs || []).reduce((sum, program) => {
-    const values = Object.values(program.fieldConfidence || {});
-    return sum + values.filter(v => /待|人工|复核|演示|入口/.test(String(v))).length;
-  }, 0);
-  const grade = result?.grade?.value ? Number(result.grade.value).toFixed(2) : '待计算';
-  return [
-    ['申请者信息是否完整', result?.profile?.apsStatus === '已通过' ? '基本完整' : '待补充', `APS 状态：${result?.profile?.apsStatus || '未提供'}；语言和课程描述仍需顾问确认。`],
-    ['成绩换算是否标注参考性质', '已完成', `德国制参考成绩 ${grade}，仅用于初筛，正式认定以学校或 uni-assist 为准。`],
-    ['项目要求是否有官网来源', pendingSources > 0 ? '部分待复核' : '已核验', `当前存在 ${pendingSources} 个字段需要官网/官方平台二次确认。`],
-    ['课程匹配是否存在硬缺口', '待确认', '需上传完整成绩单和课程描述后判断数学、统计、计算机、专业核心课学分。'],
-    ['文书是否基于真实经历', '待顾问审核', '文书只能使用申请者已提供经历，不编造科研、实习、获奖或项目。'],
-    ['是否可交付学生', pendingSources > 0 ? '暂不可直接交付' : '可进入顾问复核', '专家团输出是顾问审核前初筛，不替代人工判断，不承诺录取。']
-  ];
+const weeklyTasks = [
+  { title: '补充课程描述：统计学、数据库、Python/编程相关课程', owner: '申请者', due: '本周五', priority: '高', status: '未完成' },
+  { title: '整理 APS 材料清单并确认是否开始递交', owner: '申请者', due: '本周五', priority: '高', status: '未完成' },
+  { title: '上传 IELTS/TOEFL 官方成绩或考试计划', owner: '申请者', due: '本周三', priority: '高', status: '进行中' },
+  { title: '复核 TUM / Saarland / TH Köln 项目申请路径', owner: '顾问', due: '下周一', priority: '高', status: '待处理' },
+  { title: '基于真实经历整理 Motivation Letter 素材', owner: '申请者 + 顾问', due: '下周三', priority: '中', status: '待处理' }
+];
+
+const weeklyReport = {
+  title: '第 1 周申请推进周报',
+  period: '每周一定时生成，本版为演示数据',
+  summary: '本周重点是补齐课程描述、确认 APS 进度、上传语言成绩，并由顾问复核三个示范项目的申请路径与官网要求。',
+  done: ['完成基础档案录入', '完成德国制成绩参考换算：2.20', '建立 3 个示范项目的初步看板'],
+  next: ['补课程描述', '确认 APS 材料状态', '复核项目 deadline / VPD / uni-assist', '准备 CV 与动机信素材'],
+  risks: ['APS 未开始，可能影响整体申请节奏', '课程描述缺失，无法完成严肃的 ECTS 匹配', '项目 deadline 与申请路径仍需官网复核']
 };
 
-const statusClass = (value = '') => {
-  if (/已核验|已提供|真实计算/.test(value)) return 'ok';
-  if (/不稳定|过期|待|复核|人工/.test(value)) return 'warn';
-  return 'info';
-};
+const expertOutputs = [
+  { expert: '申请者背景画像专家', type: '背景画像', status: '已采纳', visible: true, result: '背景与数据科学方向存在交叉基础，但跨专业解释和课程描述需要补强。' },
+  { expert: '院校项目核验专家', type: '项目核验', status: '待顾问复核', visible: false, result: '三个示范项目已有来源入口，但 deadline、VPD、uni-assist、NC 需逐项官网核验。' },
+  { expert: '课程匹配与风险诊断专家', type: '课程匹配', status: '待补材料', visible: false, result: '缺少完整课程描述，数学/统计/计算机 ECTS 无法最终判断。' },
+  { expert: '申请任务看板与汇报专家', type: '周报任务', status: '已采纳', visible: true, result: '已生成本周任务：课程描述、APS、语言成绩、项目路径复核。' },
+  { expert: '申请风控与合规专家', type: '合规风控', status: '强制保留', visible: true, result: '不承诺录取；所有官网要求以官方页面和顾问人工复核为准。' }
+];
 
-const downloadText = (filename, text) => {
-  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-};
+const projectLibrary = [
+  { school: 'TUM', type: 'TU9', records: 1, status: '示范数据，待官网复核' },
+  { school: 'Saarland University', type: '综合性大学', records: 1, status: '示范数据，待官网复核' },
+  { school: 'TH Köln', type: 'FH/HAW', records: 1, status: '页面链接待重新核验' }
+];
 
-function buildMarkdownReport(result) {
-  if (!result?.ok) return '# DeutschOS 专家团顾问工作台诊断报告\n\n暂无有效结果。';
-  const p = result.profile || {};
-  const g = result.grade || {};
-  const programs = result.programs || [];
-  const matching = result.matching || [];
-  const generated = result.generatedAt || new Date().toISOString();
-  const programLines = programs.map((program, i) => {
-    const m = matching[i] || {};
-    const fields = Object.entries(program.fieldConfidence || {}).map(([k, v]) => `  - ${k}: ${v}`).join('\n');
-    return `## ${i + 1}. ${program.university} - ${program.programName}\n\n- 类型：${program.universityType}\n- 匹配分：${m.matchScore ?? '待评分'} / 100\n- 梯度：${m.tier || '待评估'}\n- 风险等级：${m.riskLevel || '待评估'}\n- 来源：${program.sourceUrl}\n- 最近生成/核验日期：${String(program.checkedAt || generated).slice(0, 10)}\n- 项目数据边界：演示种子数据，申请前必须官网复核\n\n### 推荐理由\n${(m.recommendationReasons || []).map(x => `- ${x}`).join('\n')}\n\n### 风险证据\n${(m.riskEvidence || []).map(x => `- ${x}`).join('\n')}\n\n### 字段级可信度\n${fields}\n\n### 下一步任务\n${(m.nextTasks || []).map(x => `- ${x}`).join('\n')}\n`;
-  }).join('\n');
-  const expertLines = expertRoles.map(expert => `- ${expert.name}：${expert.status}；输出：${expert.output}`).join('\n');
+const sampleSyncJson = JSON.stringify({
+  applicantId: 'app-001',
+  source: '小浣熊后台专家团',
+  reviewRequired: true,
+  publishToApplicant: false,
+  weeklySummary: '后台专家团建议本周优先补齐课程描述、推进 APS，并复核三个项目的申请路径。',
+  tasks: [
+    { title: '补充数据库课程描述', owner: '申请者', priority: '高' },
+    { title: '顾问复核 Saarland 语言要求', owner: '顾问', priority: '高' }
+  ],
+  risks: [
+    { type: 'APS', level: '高', description: 'APS 未开始，影响后续申请节奏。' }
+  ]
+}, null, 2);
 
-  return `# DeutschOS 专家团顾问工作台诊断报告\n\n生成时间：${generated}\n\n> 当前报告由 DeutschOS 德国硕士申请专家团生成，定位为留学顾问审核前初筛材料；不承诺录取，不替代学校官网、uni-assist、DAAD、APS 或顾问人工判断。\n\n## 一、申请者输入摘要\n\n- 姓名：${p.name || '未填写'}\n- 本科院校：${p.university || '未填写'}\n- 本科专业：${p.major || '未填写'}\n- 目标方向：${p.targetDirection || '未填写'}\n- 跨专业状态：${p.crossMajor || '未填写'}\n- 语言状态：${p.english || '未填写'}\n- APS 状态：${p.apsStatus || '未填写'}\n\n## 二、专家团会诊状态\n\n${expertLines}\n\n## 三、德国制成绩换算\n\n- 原始均分：${g.rawAverage}\n- 满分：${g.maxScore}\n- 及格线：${g.passScore}\n- 公式：${g.formula}\n- 计算过程：${g.process}\n- 德国制参考成绩：**${g.value}**\n- 参数来源：${g.parameterSource}\n- 备注：${g.remark}\n\n## 四、示范项目核验与初筛结果\n\n当前 Demo 使用 **TUM / Saarland University / TH Köln 三个示范院校 + 引擎可扩展** 验证流程闭环，不声称已覆盖大量院校。所有 deadline、语言要求、申请路径、NC、APS、VPD、uni-assist 信息均须以官网或官方平台最终信息为准。\n\n${programLines}\n\n## 五、顾问审核门禁\n\n${buildConsultantReview(result).map(([item, status, note]) => `- ${item}：${status}。${note}`).join('\n')}\n\n## 六、可信度与边界\n\n- 成绩换算：真实计算，但仅为参考值。\n- 项目要求：演示种子数据 + 来源入口，提交前必须官网复核。\n- 评分模型：启发式初筛模型，用于风险排序，不代表录取概率。\n- 政策雷达：Demo 配置展示，待长期运行验证。\n- 顾问责任：专家团输出用于提高整理效率，最终交付前必须由顾问复核。\n\n## 七、建议下一步\n\n1. 上传或整理成绩单与课程描述，补齐数学/统计/计算机/专业核心 ECTS。\n2. 逐项目打开 admission、deadline、language、application procedure 页面并保存截图。\n3. 推进 APS，核对是否需要 VPD / uni-assist / 直申。\n4. 将风险证据转化为 Motivation Letter 与课程匹配说明。\n5. 由顾问完成最终审核后，再交付给申请者。\n`;
+function Status({ value }) {
+  const cls = /高|未|待|风险|复核|阻塞/.test(value) ? 'warn' : /已|完成|采纳|通过/.test(value) ? 'ok' : 'info';
+  return <span className={`pill ${cls}`}>{value}</span>;
 }
 
-function FieldConfidenceTable({ program }) {
-  const rows = [
-    ['项目名称', program.fieldConfidence?.programName || '演示数据 / 待官网复核'],
-    ['来源链接', program.sourceUrl ? '已提供来源入口' : '待补充'],
-    ['抓取/生成日期', String(program.checkedAt || '').slice(0, 10) || '待补充'],
-    ['Deadline', program.fieldConfidence?.deadline || '待人工复核'],
-    ['申请路径', program.fieldConfidence?.applicationPath || '待人工复核'],
-    ['APS 要求', program.fieldConfidence?.aps || '待人工复核'],
-    ['课程/ECTS', program.fieldConfidence?.ects || '待人工复核'],
-    ['NC / Selection', program.fieldConfidence?.nc || '待人工复核']
-  ];
-  return <div className="field-table">
-    {rows.map(([k, v]) => <div className="field-row" key={k}>
-      <span>{k}</span><b className={`pill ${statusClass(v)}`}>{v}</b>
-    </div>)}
-    {program.university === 'TH Köln' && <p className="warning-line">TH Köln 当前官方详情页链接不稳定，项目详情需人工重新核验。</p>}
+function Login({ onLogin }) {
+  const [email, setEmail] = useState('student@demo.com');
+  const [password, setPassword] = useState('demo123');
+  const [error, setError] = useState('');
+  const submit = (account) => {
+    const target = account || accounts.find(a => a.email === email && a.password === password);
+    if (!target) return setError('演示账号或密码不正确，请使用页面下方提供的账号。');
+    setError('');
+    onLogin(target);
+  };
+  return <div className="login-shell">
+    <section className="login-hero">
+      <div className="eyebrow">DeutschOS Step 5 · 登录式申请者门户</div>
+      <h1>前台用户录入，后台小浣熊专家团工作，顾问审核后同步展示</h1>
+      <p>本版 Demo 将原专家团工作台升级为三角色门户：申请者提交资料并查看周报，顾问审核小浣熊后台输出，管理员维护项目库、专家团规则和每周定时任务。</p>
+      <div className="flow-strip"><span>申请者录入</span><b>→</b><span>小浣熊后台分析</span><b>→</b><span>顾问审核</span><b>→</b><span>前台展示</span></div>
+    </section>
+    <section className="login-card">
+      <h2>演示登录</h2>
+      <label>邮箱<input value={email} onChange={e => setEmail(e.target.value)} /></label>
+      <label>密码<input type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>
+      {error && <div className="error">{error}</div>}
+      <button className="primary" onClick={() => submit()}>登录门户</button>
+      <div className="demo-accounts">
+        {accounts.map(a => <button key={a.role} onClick={() => submit(a)}><b>{a.label}</b><small>{a.email} / demo123</small></button>)}
+      </div>
+      <p className="note">第一版为演示登录，不接真实注册；后续可升级 Supabase Auth。</p>
+    </section>
   </div>;
 }
 
-function ScoreParts({ parts = [] }) {
-  return <div className="score-grid">
-    {parts.map(part => <article className="score-part" key={part.key}>
-      <div className="score-top"><b>{part.key}</b><span>{part.score} / {part.weight}</span></div>
-      <div className="bar"><i style={{ width: `${Math.min(100, (part.score / part.weight) * 100)}%` }} /></div>
-      <p>{part.reason}</p>
-    </article>)}
+function Shell({ user, onLogout, children }) {
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <div className="brand"><b>DeutschOS</b><span>申请者门户 + 小浣熊后台</span></div>
+      <nav>
+        <a>首页</a><a>申请档案</a><a>项目 / 任务</a><a>周报</a><a>顾问审核</a>
+      </nav>
+      <div className="user-box"><span>当前角色</span><b>{user.label}</b><small>{user.email}</small><button onClick={onLogout}>退出登录</button></div>
+    </aside>
+    <main className="workspace">{children}</main>
   </div>;
+}
+
+function Header({ eyebrow, title, desc, actions }) {
+  return <header className="page-head"><div><span>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div>{actions && <div className="head-actions">{actions}</div>}</header>;
+}
+
+function StudentPortal({ runResult, onRunDemo }) {
+  const visibleOutputs = expertOutputs.filter(x => x.visible);
+  return <>
+    <Header eyebrow="申请者门户" title="我的德国硕士申请进度" desc="你只能看到顾问审核后发布的内容；后台专家团原始分析不会直接展示，避免误读和未经核验的信息外泄。" actions={<button className="primary" onClick={onRunDemo}>刷新初筛计算</button>} />
+    <section className="grid-4">
+      <article className="metric"><span>当前阶段</span><b>{baseApplicant.currentStage}</b><small>负责顾问：{baseApplicant.consultant}</small></article>
+      <article className="metric"><span>总体进度</span><b>{baseApplicant.progress}%</b><small>按任务、材料、项目状态估算</small></article>
+      <article className="metric"><span>德国制参考成绩</span><b>{runResult?.grade?.value || baseApplicant.germanGrade}</b><small>仅供初筛，最终以学校认定为准</small></article>
+      <article className="metric"><span>本周高风险</span><b>3 项</b><small>APS / 课程描述 / 官网复核</small></article>
+    </section>
+    <section className="panel two-col">
+      <div><h2>我的资料摘要</h2><div className="info-list">
+        <p><b>本科：</b>{baseApplicant.university} · {baseApplicant.major}</p>
+        <p><b>目标：</b>{baseApplicant.targetDirection} · {baseApplicant.intake}</p>
+        <p><b>语言：</b>{baseApplicant.english}</p>
+        <p><b>APS：</b><Status value={baseApplicant.apsStatus} /></p>
+      </div></div>
+      <div><h2>材料状态</h2><div className="mini-table">{materials.map(m => <div key={m.name}><b>{m.name}</b><Status value={m.status} /><small>{m.note}</small></div>)}</div></div>
+    </section>
+    <section className="panel"><h2>顾问发布的申请项目</h2><div className="cards">{approvedPrograms.map(p => <article className="program" key={p.program}><div><span>{p.university}</span><h3>{p.program}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>来源入口</dt><dd><a href={p.source} target="_blank">{p.source}</a></dd></dl></article>)}</div></section>
+    <section className="panel"><h2>本周我的任务</h2><TaskTable rows={weeklyTasks.filter(t => t.owner.includes('申请者'))} /></section>
+    <section className="panel two-col"><WeeklyReport applicantOnly /><div><h2>已发布专家团结论</h2>{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
+  </>;
+}
+
+function ConsultantWorkbench({ onRunDemo, runResult }) {
+  const [syncText, setSyncText] = useState(sampleSyncJson);
+  const [syncPreview, setSyncPreview] = useState(null);
+  const parseSync = () => {
+    try { setSyncPreview(JSON.parse(syncText)); } catch { setSyncPreview({ error: 'JSON 格式错误，请检查小浣熊后台导出内容。' }); }
+  };
+  return <>
+    <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button></>} />
+    <section className="grid-4">
+      <article className="metric"><span>负责申请者</span><b>1</b><small>演示账号</small></article>
+      <article className="metric"><span>待审核输出</span><b>3</b><small>项目核验 / 课程匹配 / 文书素材</small></article>
+      <article className="metric"><span>本周顾问待办</span><b>{weeklyTasks.filter(t => t.owner.includes('顾问')).length}</b><small>需在周报发布前处理</small></article>
+      <article className="metric"><span>高风险学生</span><b>1</b><small>APS 未开始</small></article>
+    </section>
+    <section className="panel two-col"><div><h2>申请者列表</h2><div className="applicant-row"><b>{baseApplicant.name}</b><Status value={baseApplicant.currentStage} /><small>{baseApplicant.targetDirection} · 进度 {baseApplicant.progress}% · APS {baseApplicant.apsStatus}</small></div></div><div><h2>计算结果</h2><p>德国制成绩：<b>{runResult?.grade?.value || '待运行'}</b></p><p>项目数量：<b>{runResult?.programs?.length || approvedPrograms.length}</b></p><p className="note">计算结果仍需顾问审核，不能直接等同录取判断。</p></div></section>
+    <section className="panel"><h2>小浣熊后台 JSON 同步入口</h2><p className="muted">第一版采用“JSON 上传 / 粘贴”方式：专家团在小浣熊后台完成分析后，顾问把结构化结果粘贴到这里，审核后发布给申请者。</p><textarea className="json-box" value={syncText} onChange={e => setSyncText(e.target.value)} />{syncPreview && <pre className={syncPreview.error ? 'json-preview error' : 'json-preview'}>{JSON.stringify(syncPreview, null, 2)}</pre>}</section>
+    <section className="panel two-col"><div><h2>专家团输出审核</h2>{expertOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p><div className="actions"><button>采纳</button><button>修改后采纳</button><button>标记待复核</button><button>不展示</button></div></div>)}</div><div><WeeklyReport /><h2>顾问本周待办</h2><TaskTable rows={weeklyTasks.filter(t => t.owner.includes('顾问'))} /></div></section>
+  </>;
+}
+
+function AdminConsole() {
+  return <>
+    <Header eyebrow="管理员后台" title="系统运营、专家团配置与定时任务管理" desc="管理员维护三角色权限、项目库质量、专家团规则、每周一自动周报任务和同步记录。" />
+    <section className="grid-4">
+      <article className="metric"><span>用户角色</span><b>3 类</b><small>申请者 / 顾问 / 管理员</small></article>
+      <article className="metric"><span>项目库记录</span><b>3</b><small>演示项目，待扩展数据库</small></article>
+      <article className="metric"><span>定时任务</span><b>周一</b><small>每周生成完整周报</small></article>
+      <article className="metric"><span>同步方式</span><b>JSON</b><small>后台粘贴/上传，顾问审核</small></article>
+    </section>
+    <section className="panel two-col"><div><h2>账号与权限</h2><table><thead><tr><th>角色</th><th>账号</th><th>权限重点</th></tr></thead><tbody>{accounts.map(a => <tr key={a.role}><td>{a.label}</td><td>{a.email}</td><td>{a.role === 'student' ? '编辑资料、查看审核后结果、完成任务' : a.role === 'consultant' ? '审核专家输出、发布周报、跟进申请者' : '管理用户、项目库、专家团规则和定时任务'}</td></tr>)}</tbody></table></div><div><h2>每周定时任务配置</h2><div className="timeline"><div><b>每周一 09:00</b><p>读取所有活跃申请者档案</p></div><div><b>09:10</b><p>检查 APS、语言、材料、deadline、网申状态</p></div><div><b>09:30</b><p>生成顾问内部版周报与申请者可见版草稿</p></div><div><b>顾问审核后</b><p>发布到申请者门户</p></div></div></div></section>
+    <section className="panel two-col"><div><h2>项目库质量</h2>{projectLibrary.map(p => <div className="review-item" key={p.school}><b>{p.school}</b><Status value={p.type} /><p>{p.records} 条记录 · {p.status}</p></div>)}</div><div><h2>专家团配置边界</h2><ul className="check-list"><li>所有 deadline、NC、语言、VPD、APS 信息必须标注来源和日期。</li><li>专家团输出默认进入待顾问审核，不直接同步给申请者。</li><li>用户前台仅展示顾问审核后的任务、周报和建议。</li><li>不承诺录取，不替代学校官网、uni-assist、DAAD、APS 或人工判断。</li></ul></div></section>
+  </>;
+}
+
+function TaskTable({ rows }) {
+  return <table><thead><tr><th>任务</th><th>负责人</th><th>截止</th><th>优先级</th><th>状态</th></tr></thead><tbody>{rows.map(t => <tr key={t.title}><td>{t.title}</td><td>{t.owner}</td><td>{t.due}</td><td><Status value={t.priority} /></td><td><Status value={t.status} /></td></tr>)}</tbody></table>;
+}
+
+function WeeklyReport({ applicantOnly = false }) {
+  return <div className="weekly"><h2>{weeklyReport.title}</h2><Status value={applicantOnly ? '顾问已发布版本' : '待顾问审核 / 可发布'} /><p>{weeklyReport.summary}</p><h3>已完成</h3><ul>{weeklyReport.done.map(x => <li key={x}>{x}</li>)}</ul><h3>下周重点</h3><ul>{weeklyReport.next.map(x => <li key={x}>{x}</li>)}</ul><h3>风险提醒</h3><ul>{weeklyReport.risks.map(x => <li key={x}>{x}</li>)}</ul></div>;
 }
 
 function App() {
-  const [profile, setProfile] = useState(demoProfile);
-  const [result, setResult] = useState(null);
-  const [active, setActive] = useState('overview');
-  const [loading, setLoading] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiAdvice, setAiAdvice] = useState(null);
-  const [error, setError] = useState('');
-
-  const update = (key, value) => setProfile(prev => ({ ...prev, [key]: value }));
-
-  const runDemo = async (usePreset = false) => {
-    setLoading(true); setError('');
+  const [user, setUser] = useState(null);
+  const [runResult, setRunResult] = useState(null);
+  const [toast, setToast] = useState('');
+  const demoProfile = useMemo(() => ({
+    name: baseApplicant.name,
+    university: baseApplicant.university,
+    major: baseApplicant.major,
+    targetDirection: baseApplicant.targetDirection,
+    crossMajor: baseApplicant.crossMajor,
+    averageScore: baseApplicant.averageScore,
+    maxScore: baseApplicant.maxScore,
+    passScore: baseApplicant.passScore,
+    english: baseApplicant.english,
+    german: baseApplicant.german,
+    apsStatus: baseApplicant.apsStatus,
+    experiences: 'Python 数据分析课程项目、用户行为分析 Demo、课程论文与毕业设计素材（演示）'
+  }), []);
+  const runDemo = async () => {
+    setToast('正在调用 Vercel API 计算成绩和项目匹配…');
     try {
-      const payloadProfile = usePreset ? demoProfile : profile;
-      if (usePreset) setProfile(demoProfile);
-      const data = await api('/demo/run', { profile: payloadProfile });
-      if (!data.ok) throw new Error(data.error || '输入校验失败');
-      setResult(data);
-      setAiAdvice(null);
-      setActive('overview');
-    } catch (e) {
-      setError(e.message || '运行失败');
-    } finally {
-      setLoading(false);
+      const data = await api('/demo/run', { profile: demoProfile });
+      setRunResult(data);
+      setToast(data.ok ? `计算完成：德国制参考成绩 ${data.grade?.value}` : '计算失败，请检查接口。');
+    } catch (error) {
+      setToast(error.message || '接口调用失败');
     }
   };
-
-  const reportMarkdown = useMemo(() => buildMarkdownReport(result), [result]);
-
-
-  const requestAiAdvice = async () => {
-    if (!result?.ok) return;
-    setAiLoading(true); setError('');
-    try {
-      const data = await api('/ai/advice', { profile: result.profile, programs: result.programs });
-      setAiAdvice(data);
-      setActive('ai');
-    } catch (e) {
-      setError(e.message || 'AI 顾问调用失败');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
-  return <div className="app">
-    <header className="hero">
-      <div className="eyebrow">DeutschOS MVP · 专家团会诊 / 顾问审核 / 风险证据</div>
-      <h1>德国硕士申请专家团顾问工作台</h1>
-      <p className="lead">输入申请者背景后，由 DeutschOS 专家团完成初筛会诊，输出项目核验、课程风险、申请任务和顾问审核清单。</p>
-      <div className="hero-tags">
-        <span>真实计算：84/100/60 → 2.20</span>
-        <span>示范院校：TUM / Saarland / TH Köln</span>
-        <span>顾问门禁：来源、日期、待人工核实</span>
-      </div>
-      <div className="hero-actions">
-        <button onClick={() => runDemo(true)} disabled={loading}>{loading ? '生成中…' : '一键运行完整 Demo'}</button>
-        <button className="ghost" onClick={() => document.querySelector('#input-panel')?.scrollIntoView({ behavior: 'smooth' })}>手动输入背景</button>
-      </div>
-      <p className="boundary">本 Demo 展示“专家团初筛 + 顾问复核”的留学中介工作流；专家团输出不等于最终申请结论，不承诺录取。</p>
-    </header>
-
-    <main className="layout">
-      <section id="input-panel" className="panel input-panel">
-        <h2>1. 申请者背景输入</h2>
-        <div className="form-grid">
-          <label>姓名<input value={profile.name} onChange={e => update('name', e.target.value)} /></label>
-          <label>本科院校<input value={profile.university} onChange={e => update('university', e.target.value)} /></label>
-          <label>本科专业<input value={profile.major} onChange={e => update('major', e.target.value)} /></label>
-          <label>目标方向<input value={profile.targetDirection} onChange={e => update('targetDirection', e.target.value)} /></label>
-          <label>跨专业状态<select value={profile.crossMajor} onChange={e => update('crossMajor', e.target.value)}>
-            <option>否</option><option>部分跨专业</option><option>是</option>
-          </select></label>
-          <label>APS 状态<select value={profile.apsStatus} onChange={e => update('apsStatus', e.target.value)}>
-            <option>未开始</option><option>准备中</option><option>已递交</option><option>已通过</option><option>不确定</option>
-          </select></label>
-          <label>均分<input type="number" value={profile.averageScore} onChange={e => update('averageScore', e.target.value)} /></label>
-          <label>满分<input type="number" value={profile.maxScore} onChange={e => update('maxScore', e.target.value)} /></label>
-          <label>及格线<input type="number" value={profile.passScore} onChange={e => update('passScore', e.target.value)} /></label>
-          <label className="wide">英语成绩<input value={profile.english} onChange={e => update('english', e.target.value)} /></label>
-          <label className="wide">项目 / 实习 / 课程素材<textarea value={profile.experiences} onChange={e => update('experiences', e.target.value)} /></label>
-        </div>
-        <button className="run" onClick={() => runDemo(false)} disabled={loading}>{loading ? '生成中…' : '生成初筛诊断'}</button>
-        {error && <p className="error">{error}</p>}
-      </section>
-
-      <section className="panel result-panel">
-        <div className="result-head">
-          <div>
-            <h2>2. 专家团初筛与顾问审核结果</h2>
-            <p>核心目标：把“专家如何分工 / 风险在哪 / 顾问如何把关 / 下一步做什么”讲清楚。</p>
-          </div>
-          {result?.ok && <div className="result-actions"><button className="ai-button" onClick={requestAiAdvice} disabled={aiLoading}>{aiLoading ? 'AI 生成中…' : '生成 AI 顾问建议'}</button><button className="download" onClick={() => downloadText('deutschos-expert-workbench-report.md', reportMarkdown)}>下载专家团诊断报告</button></div>}
-        </div>
-
-        {!result?.ok && <div className="empty">
-          <b>尚未生成结果</b>
-          <p>点击“一键运行完整 Demo”或手动输入背景后生成。报告会明确区分真实计算、演示数据和待人工复核项。</p>
-        </div>}
-
-        {result?.ok && <>
-          <nav className="tabs">{tabs.map(([id, label]) => <button key={id} className={active === id ? 'active' : ''} onClick={() => setActive(id)}>{label}</button>)}</nav>
-
-          {active === 'overview' && <div className="tab-content">
-            <div className="kpi-grid">
-              <article><span>德国制参考成绩</span><b>{Number(result.grade.value).toFixed(2)}</b><small>{result.grade.process}</small></article>
-              <article><span>示范院校</span><b>3 个</b><small>TUM / Saarland University / TH Köln + 引擎可扩展</small></article>
-              <article><span>最高匹配分</span><b>{Math.max(...result.matching.map(m => m.matchScore))}</b><small>启发式评分，不代表录取概率</small></article>
-              <article><span>专家团状态</span><b>7 位</b><small>已完成初筛会诊，等待顾问最终审核</small></article>
-            </div>
-            <div className="formula-card">
-              <h3>输入 → 计算 → 输出证据链</h3>
-              <p><b>公式：</b>{result.grade.formula}</p>
-              <p><b>计算：</b>{result.grade.process}</p>
-              <p><b>边界：</b>{result.grade.remark}；正式申请以学校或 uni-assist 认定为准。</p>
-            </div>
-            <div className="honesty-card">
-              <h3>本次 Demo 的诚实边界</h3>
-              <ul>
-                <li>成绩换算和评分为浏览器/接口真实计算。</li>
-                <li>院校数量按“三个示范院校 + 引擎可扩展”表达，不写 400 所/100 所。</li>
-                <li>效率只表达为“初筛从数天缩短到分钟级（基于作者真实申请经历对比）”。</li>
-                <li>政策雷达为 Demo 配置展示，待长期运行验证。</li>
-              </ul>
-            </div>
-          </div>}
-
-
-          {active === 'experts' && <div className="tab-content">
-            <div className="section-title-row">
-              <div>
-                <h3>专家团会诊：AI 初筛输出，顾问最终把关</h3>
-                <p>基于你已配置的 DeutschOS 德国硕士申请专家团，本区将留学中介服务拆成总控、画像、核验、课程、文书、看板和风控七个环节。</p>
-              </div>
-              <span className="review-badge">顾问审核前初筛</span>
-            </div>
-            <div className="expert-grid">
-              {expertRoles.map(expert => <article className="expert-card" key={expert.name}>
-                <div className="expert-card-head">
-                  <h4>{expert.name}</h4>
-                  <span className={`pill ${expert.risk === '高' ? 'warn' : 'info'}`}>风险：{expert.risk}</span>
-                </div>
-                <p>{expert.role}</p>
-                <dl>
-                  <dt>输出</dt><dd>{expert.output}</dd>
-                  <dt>状态</dt><dd><span className={`pill ${statusClass(expert.status)}`}>{expert.status}</span></dd>
-                </dl>
-              </article>)}
-            </div>
-
-            <div className="consultant-gate">
-              <h3>顾问审核门禁</h3>
-              <p className="boundary-box">专家团负责把复杂申请信息整理成可复核的初筛材料；留学顾问负责最终判断、官网复核、材料真实性确认和交付口径把关。</p>
-              <table><thead><tr><th>审核项</th><th>状态</th><th>顾问备注</th></tr></thead><tbody>
-                {buildConsultantReview(result).map(([item, status, note]) => <tr key={item}><td>{item}</td><td><span className={`pill ${statusClass(status)}`}>{status}</span></td><td>{note}</td></tr>)}
-              </tbody></table>
-            </div>
-
-            <div className="workflow-strip">
-              {['申请者输入', '专家团会诊', '官网/材料复核', '顾问审核', '方案交付'].map((step, index) => <span key={step}>{index + 1}. {step}</span>)}
-            </div>
-          </div>}
-
-          {active === 'programs' && <div className="cards">
-            {result.programs.map((p, i) => {
-              const m = result.matching[i];
-              return <article className="program-card" key={p.id}>
-                <div className="program-title">
-                  <div><span>{p.universityType}</span><h3>{p.university}</h3><p>{p.programName}</p></div>
-                  <b>{m.matchScore} / 100</b>
-                </div>
-                <div className="meta"><span>{m.tier}</span><span>风险：{m.riskLevel}</span><span>{p.teachingLanguage}</span></div>
-                <h4>推荐理由</h4><ul>{m.recommendationReasons.map(x => <li key={x}>{x}</li>)}</ul>
-                <h4>风险证据</h4><ul className="risk-list">{m.riskEvidence.map(x => <li key={x}>{x}</li>)}</ul>
-                <h4>字段级可信度</h4><FieldConfidenceTable program={p} />
-                <h4>下一步任务</h4><ol>{m.nextTasks.map(x => <li key={x}>{x}</li>)}</ol>
-                <a href={p.sourceUrl} target="_blank" rel="noreferrer">打开来源入口</a>
-              </article>;
-            })}
-          </div>}
-
-          {active === 'scoring' && <div className="tab-content">
-            <h3>启发式评分模型：用于初筛，不代表录取概率</h3>
-            <p className="boundary-box">评分由成绩、专业相关度、课程/ECTS、语言、APS、项目经历、deadline 风险和数据可信度构成。当前未做历史录取结果校准，因此不声称准确率。</p>
-            {result.matching.map(m => <section className="score-section" key={m.programId}>
-              <h4>{m.university} · {m.programName} <span>{m.matchScore} / 100</span></h4>
-              <ScoreParts parts={m.scoreParts} />
-            </section>)}
-          </div>}
-
-          {active === 'dashboard' && <div className="tab-content">
-            <h3>多校作战看板</h3>
-            <table><thead><tr><th>学校</th><th>梯度</th><th>当前状态</th><th>阻塞项</th><th>下一步</th><th>优先级</th></tr></thead><tbody>
-              {result.dashboard.map(r => <tr key={r.university}><td>{r.university}</td><td>{r.tier}</td><td>{r.status}</td><td>{r.blocker}</td><td>{r.nextStep}</td><td>{r.priority}</td></tr>)}
-            </tbody></table>
-          </div>}
-
-          {active === 'radar' && <div className="tab-content">
-            <h3>政策雷达配置原型</h3>
-            <p className="boundary-box">当前状态：Demo 配置展示，待长期运行验证。正式版需接入定时抓取、页面差异检测、通知和历史版本留存。</p>
-            <div className="radar-box"><b>{result.policyRadar.taskName}</b><span>频率：{result.policyRadar.frequency}</span><span>{result.policyRadar.systemTaskStatus}</span></div>
-            <table><thead><tr><th>日期</th><th>学校</th><th>检查项</th><th>影响</th><th>建议动作</th></tr></thead><tbody>
-              {result.policyRadar.firstRun.map((r, i) => <tr key={i}><td>{r.date}</td><td>{r.university}</td><td>{r.checks}</td><td>{r.impact}</td><td>{r.suggestedAction}</td></tr>)}
-            </tbody></table>
-          </div>}
-
-
-
-          {active === 'ai' && <div className="tab-content">
-            <h3>AI 顾问建议：服务端安全代理</h3>
-            <p className="boundary-box">安全说明：真实 API Key 只允许配置在 Netlify 服务端环境变量 <b>DEEPSEEK_API_KEY</b> 中；公开 GitHub、前端代码和构建产物不包含密钥。若未配置环境变量，本页会返回本地规则兜底建议。</p>
-            {!aiAdvice && <div className="empty"><b>尚未生成 AI 建议</b><p>点击右上角“生成 AI 顾问建议”。</p></div>}
-            {aiAdvice && <div className="ai-card">
-              <div className="ai-meta"><span>模式：{aiAdvice.mode}</span><span>提供方：{aiAdvice.provider}</span></div>
-              {aiAdvice.warning && <p className="warning-line">{aiAdvice.warning}</p>}
-              <h4>建议解读</h4>
-              <ul>{(aiAdvice.advice || []).map((x, i) => <li key={`a-${i}`}>{x}</li>)}</ul>
-              {!!aiAdvice.riskWarnings?.length && <><h4>风险提醒</h4><ul className="risk-list">{aiAdvice.riskWarnings.map((x, i) => <li key={`r-${i}`}>{x}</li>)}</ul></>}
-              <h4>下一步动作</h4>
-              <ol>{(aiAdvice.nextActions || []).map((x, i) => <li key={`n-${i}`}>{x}</li>)}</ol>
-            </div>}
-          </div>}
-
-          {active === 'report' && <div className="tab-content">
-            <h3>报告摘要：以诚实口径展示效率与质量</h3>
-            <div className="summary-card"><b>{result.efficiency.summary.efficiencyStatement}</b><p>{result.efficiency.summary.quantificationBoundary}</p></div>
-            <table><thead><tr><th>环节</th><th>传统方式</th><th>DeutschOS Demo</th><th>证据边界</th></tr></thead><tbody>
-              {result.efficiency.rows.map(r => <tr key={r.stage}><td>{r.stage}</td><td>{r.manual}</td><td>{r.system}</td><td>{r.evidence}</td></tr>)}
-            </tbody></table>
-            <h4>质量边界</h4><ul>{result.efficiency.quality.map(q => <li key={q.metric}><b>{q.metric}：</b>{q.count}</li>)}</ul>
-          </div>}
-        </>}
-      </section>
-    </main>
-  </div>;
+  if (!user) return <Login onLogin={setUser} />;
+  return <Shell user={user} onLogout={() => setUser(null)}>
+    {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
+    {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} />}
+    {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} />}
+    {user.role === 'admin' && <AdminConsole />}
+  </Shell>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);
