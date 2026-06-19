@@ -1,4 +1,5 @@
 import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from './demo-core.mjs';
+import { handlePortalRequest } from '../../api/portal-store.mjs';
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -107,6 +108,10 @@ export async function handler(event) {
     }
 
     if (path === '/health') return json(200, { ok: true, service: 'deutschos-netlify-api', version: '0.3.0-netlify' });
+
+    if (path.startsWith('/portal/')) {
+      return handlePortalRequest({ method: event.httpMethod, path, body });
+    }
 
     if (path === '/demo/run') {
       return json(200, runFullDemo(body.profile || {}, body.programs || []));

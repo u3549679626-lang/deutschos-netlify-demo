@@ -1,15 +1,17 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
-const api = async (path, payload = {}) => {
+const api = async (path, payload = {}, options = {}) => {
+  const method = options.method || 'POST';
   const request = async (base) => {
-    const res = await fetch(`${base}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    const init = {
+      method,
+      headers: { 'Content-Type': 'application/json' }
+    };
+    if (method !== 'GET') init.body = JSON.stringify(payload);
+    const res = await fetch(`${base}${path}`, init);
     if (!res.ok) throw new Error(`API ${path} failed via ${base}`);
     return res.json();
   };
@@ -272,7 +274,7 @@ function Login({ onLogin }) {
   };
   return <div className="login-shell">
     <section className="login-hero">
-      <div className="eyebrow">DeutschOS Step 6 · 后台 JSON 同步闭环</div>
+      <div className="eyebrow">DeutschOS Step 7 · 数据库持久化就绪</div>
       <h1>前台用户录入，后台小浣熊专家团工作，顾问审核后同步展示</h1>
       <p>本版 Demo 将原专家团工作台升级为三角色门户：申请者提交资料并查看周报，顾问审核小浣熊后台输出，管理员维护项目库、专家团规则和每周定时任务。</p>
       <div className="flow-strip"><span>申请者录入</span><b>→</b><span>小浣熊后台分析</span><b>→</b><span>顾问审核</span><b>→</b><span>前台展示</span></div>
@@ -308,7 +310,7 @@ function Header({ eyebrow, title, desc, actions }) {
   return <header className="page-head"><div><span>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div>{actions && <div className="head-actions">{actions}</div>}</header>;
 }
 
-function StudentPortal({ runResult, onRunDemo, portalData }) {
+function StudentPortal({ runResult, onRunDemo, portalData, portalMode }) {
   const applicant = portalData.applicant;
   const portalMaterials = portalData.materials || materials;
   const portalPrograms = portalData.programs || approvedPrograms;
@@ -321,7 +323,7 @@ function StudentPortal({ runResult, onRunDemo, portalData }) {
     <Header eyebrow="申请者门户" title="我的德国硕士申请进度" desc="你只能看到顾问审核后发布的内容；后台专家团原始分析不会直接展示，避免误读和未经核验的信息外泄。" actions={<button className="primary" onClick={onRunDemo}>刷新初筛计算</button>} />
     <section className="sync-banner">
       <b>当前展示版本：{portalData.consultantReview?.status || '顾问已发布版本'}</b>
-      <span>来源：{portalData.source?.system || '内置演示数据'} · 最近发布：{applicant.lastPublished || portalData.consultantReview?.reviewedAt || '待发布'}</span>
+      <span>来源：{portalData.source?.system || '内置演示数据'} · 存储模式：{portalMode || 'localStorage'} · 最近发布：{applicant.lastPublished || portalData.consultantReview?.reviewedAt || '待发布'}</span>
     </section>
     <section className="grid-4">
       <article className="metric"><span>当前阶段</span><b>{applicant.currentStage}</b><small>负责顾问：{applicant.consultant}</small></article>
@@ -344,7 +346,7 @@ function StudentPortal({ runResult, onRunDemo, portalData }) {
   </>;
 }
 
-function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData }) {
+function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, portalMode, setPortalMode, refreshPortal }) {
   const [syncText, setSyncText] = useState(sampleSyncJson);
   const [syncPreview, setSyncPreview] = useState(null);
   const [syncErrors, setSyncErrors] = useState([]);
@@ -361,7 +363,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData }
       setSyncErrors(['JSON 格式错误，请检查小浣熊后台导出内容。']);
     }
   };
-  const publishSync = () => {
+  const publishSync = async () => {
     try {
       const payload = syncPreview || JSON.parse(syncText);
       const errors = validateSyncPayload(payload);
@@ -371,25 +373,37 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData }
         return;
       }
       const merged = mergePortalData(payload);
-      localStorage.setItem(storageKey, JSON.stringify(merged));
-      setPortalData(merged);
-      setPublishMessage('已发布到申请者门户。请切换申请者账号查看更新。');
+      try {
+        const result = await api('/portal/publish', { applicantId: payload.applicantId || 'app-001', portalData: merged });
+        const published = result.portalData || merged;
+        localStorage.setItem(storageKey, JSON.stringify(published));
+        setPortalData(published);
+        setPortalMode(result.mode || 'api');
+        setPublishMessage(`已发布到申请者门户。存储模式：${result.mode || 'api'}。请切换申请者账号查看更新。`);
+      } catch (apiError) {
+        localStorage.setItem(storageKey, JSON.stringify(merged));
+        setPortalData(merged);
+        setPortalMode('localStorage-fallback');
+        setPublishMessage(`后端 API 暂不可用，已使用 localStorage 兜底发布：${apiError.message}`);
+      }
     } catch {
       setPublishMessage('发布失败：JSON 无法解析。');
     }
   };
-  const resetPublished = () => {
+  const resetPublished = async () => {
     localStorage.removeItem(storageKey);
+    try { await api('/portal/reset', { applicantId: 'app-001' }); } catch {}
     setPortalData(defaultPortalData);
+    setPortalMode('localStorage-reset');
     setSyncPreview(null);
     setSyncErrors([]);
     setPublishMessage('已恢复内置演示基线数据。');
   };
   return <>
-    <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button><button className="primary" onClick={publishSync}>顾问审核后发布</button></>} />
+    <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button><button className="primary" onClick={publishSync}>顾问审核后发布</button><button className="secondary" onClick={refreshPortal}>从数据库/API刷新</button></>} />
     <section className="grid-4">
       <article className="metric"><span>负责申请者</span><b>1</b><small>演示账号</small></article>
-      <article className="metric"><span>已发布项目</span><b>{portalData.programs?.length || 0}</b><small>申请者门户当前可见</small></article>
+      <article className="metric"><span>已发布项目</span><b>{portalData.programs?.length || 0}</b><small>申请者门户当前可见 · {portalMode}</small></article>
       <article className="metric"><span>本周顾问待办</span><b>{(portalData.tasks || []).filter(t => t.owner?.includes('顾问')).length}</b><small>需在周报发布前处理</small></article>
       <article className="metric"><span>用户可见风险</span><b>{(portalData.risks || []).filter(r => r.visibleToApplicant !== false).length}</b><small>经顾问筛选</small></article>
     </section>
@@ -430,7 +444,27 @@ function App() {
   const [user, setUser] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [portalData, setPortalData] = useState(() => loadPublishedData());
+  const [portalMode, setPortalMode] = useState('localStorage');
   const [toast, setToast] = useState('');
+  const refreshPortal = async () => {
+    try {
+      const result = await api('/portal/read', { applicantId: 'app-001' });
+      if (result.portalData) {
+        setPortalData(result.portalData);
+        setPortalMode(result.mode || 'api');
+        localStorage.setItem(storageKey, JSON.stringify(result.portalData));
+      }
+    } catch (error) {
+      const fallback = loadPublishedData();
+      setPortalData(fallback);
+      setPortalMode('localStorage-fallback');
+    }
+  };
+
+  useEffect(() => {
+    refreshPortal();
+  }, []);
+
   const demoProfile = useMemo(() => ({
     name: baseApplicant.name,
     university: baseApplicant.university,
@@ -458,8 +492,8 @@ function App() {
   if (!user) return <Login onLogin={setUser} />;
   return <Shell user={user} onLogout={() => setUser(null)}>
     {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
-    {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} />}
-    {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} />}
+    {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} portalMode={portalMode} />}
+    {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} portalMode={portalMode} setPortalMode={setPortalMode} refreshPortal={refreshPortal} />}
     {user.role === 'admin' && <AdminConsole />}
   </Shell>;
 }

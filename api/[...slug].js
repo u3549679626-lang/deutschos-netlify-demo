@@ -1,4 +1,5 @@
 import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from './demo-core.mjs';
+import { handlePortalRequest } from './portal-store.mjs';
 
 function buildFallbackAdvice(demo) {
   const top = demo.matching?.[0] || {};
@@ -91,6 +92,10 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET' && (path === '/health' || path === '/')) {
       return res.status(200).json({ ok: true, service: 'deutschos-vercel-api', version: '0.4.0-vercel' });
+    }
+    if (path.startsWith('/portal/')) {
+      const result = await handlePortalRequest({ method: req.method, path, body });
+      return res.status(result.statusCode).setHeader('Content-Type', 'application/json; charset=utf-8').send(result.body);
     }
     if (path === '/demo/run') return res.status(200).json(runFullDemo(body.profile || {}, body.programs || []));
     if (path === '/policy-radar/run') return res.status(200).json(buildPolicyRadar(body.profile || {}, body.programs || []));
