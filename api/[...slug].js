@@ -1,7 +1,7 @@
-import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from './demo-core.mjs';
-import { handlePortalRequest } from './portal-store.mjs';
-import { handleAuthRequest } from './auth-store.mjs';
-import { handleScheduledTaskRequest } from './scheduled-tasks-store.mjs';
+import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from '../server/demo-core.mjs';
+import { handlePortalRequest } from '../server/portal-store.mjs';
+import { handleAuthRequest } from '../server/auth-store.mjs';
+import { handleScheduledTaskRequest } from '../server/scheduled-tasks-store.mjs';
 
 function buildFallbackAdvice(demo) {
   const top = demo.matching?.[0] || {};
