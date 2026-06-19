@@ -1,6 +1,7 @@
 import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from './demo-core.mjs';
 import { handlePortalRequest } from './portal-store.mjs';
 import { handleAuthRequest } from './auth-store.mjs';
+import { handleScheduledTaskRequest } from './scheduled-tasks-store.mjs';
 
 function buildFallbackAdvice(demo) {
   const top = demo.matching?.[0] || {};
@@ -110,6 +111,9 @@ export default async function handler(req, res) {
     if (path.startsWith('/auth/')) {
       const action = path.split('/').filter(Boolean)[1] || 'status';
       return handleAuthRequest(req, res, action);
+    }
+    if (path.startsWith('/scheduled-tasks')) {
+      return handleScheduledTaskRequest(req, res, path);
     }
     if (path === '/demo/run') return res.status(200).json(runFullDemo(body.profile || {}, body.programs || []));
     if (path === '/policy-radar/run') return res.status(200).json(buildPolicyRadar(body.profile || {}, body.programs || []));

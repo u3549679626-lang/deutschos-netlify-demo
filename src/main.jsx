@@ -219,6 +219,42 @@ const sampleSyncPayload = {
 
 const sampleSyncJson = JSON.stringify(sampleSyncPayload, null, 2);
 
+
+const sampleScheduledTaskPayload = {
+  schemaVersion: 'deutschos-scheduled-task-result-v1',
+  applicantId: 'app-001',
+  taskId: 'weekly-application-progress-report',
+  runId: 'weekly-2026-06-29-app-001',
+  generatedAt: '2026-06-29T09:00:00+08:00',
+  result: {
+    title: '第 3 周申请推进周报',
+    period: '2026-06-29 至 2026-07-05',
+    summary: '小浣熊平台定时任务发现：APS 仍是最高优先级，课程描述补充进度影响项目匹配判断；本周建议顾问完成官网路径复核并发布申请者任务。',
+    done: ['完成 Supabase 项目创建', '完成定时任务包创建', '完成申请者门户 JSON 同步链路'],
+    next: ['完成 APS 材料准备清单', '补齐统计/数据库/Python 课程描述', '顾问复核 Saarland 与 TH Köln 官方申请路径'],
+    programs: [
+      { university: 'Saarland University', program: 'Data Science and Artificial Intelligence', tier: '匹配', status: '需复核官网路径', deadline: '待官网确认', path: '官网入口 / uni-assist 待确认', risk: '中', source: 'https://www.uni-saarland.de/', checkedAt: '2026-06-29', note: '定时任务建议本周复核 language requirements 与 application procedure。' },
+      { university: 'TH Köln', program: 'Web and Data Science', tier: '稳妥', status: '材料补强后推进', deadline: '待官网确认', path: '官网 / 申请平台待确认', risk: '中', source: 'https://www.th-koeln.de/', checkedAt: '2026-06-29', note: '适合作为 HAW/FH 稳妥方向，需确认课程 ECTS。' }
+    ],
+    materials: [
+      { name: '课程描述', status: '待补充', owner: '申请者', note: '统计、数据库、Python 课程描述缺失。' },
+      { name: 'APS', status: '未开始', owner: '申请者', note: '本周最高优先级，需确认材料清单。' }
+    ],
+    tasks: [
+      { title: '上传统计/数据库/Python 课程描述', owner: '申请者', due: '本周五', priority: '高', status: '未完成' },
+      { title: '整理 APS 材料清单并确认递交流程', owner: '申请者', due: '本周四', priority: '高', status: '未完成' },
+      { title: '顾问复核两个项目官网申请路径', owner: '顾问', due: '本周三', priority: '高', status: '待处理' }
+    ],
+    risks: [
+      { type: 'APS', level: '高', description: 'APS 未开始，可能影响后续申请节奏。', suggestedAction: '本周完成 APS 材料清单确认。', visibleToApplicant: true },
+      { type: '课程匹配', level: '中', description: '课程描述缺失，ECTS 匹配无法最终确认。', suggestedAction: '先补统计、数据库、Python 课程。', visibleToApplicant: true },
+      { type: '官网核验', level: '中', description: 'deadline、语言要求和申请平台仍需官网复核。', suggestedAction: '由顾问完成官网核验后再发布最终判断。', visibleToApplicant: false }
+    ]
+  }
+};
+
+const sampleScheduledTaskJson = JSON.stringify(sampleScheduledTaskPayload, null, 2);
+
 function mergePortalData(payload) {
   return {
     schemaVersion: payload.schemaVersion || 'deutschos-sync-v1',
@@ -442,8 +478,73 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
       {publishMessage && <div className="success-msg">{publishMessage}</div>}
       {syncPreview && <pre className="json-preview">{JSON.stringify(syncPreview, null, 2)}</pre>}
     </section>
+    <ScheduledTaskConnector setPortalData={setPortalData} setPortalMode={setPortalMode} />
     <section className="panel two-col"><div><h2>专家团输出审核</h2>{(portalData.expertOutputs || []).map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p><div className="actions"><button>采纳</button><button>修改后采纳</button><button>标记待复核</button><button>不展示</button></div></div>)}</div><div><WeeklyReport report={portalData.weeklyReport} /><h2>顾问本周待办</h2><TaskTable rows={(portalData.tasks || []).filter(t => t.owner?.includes('顾问'))} /></div></section>
   </>;
+}
+
+
+function ScheduledTaskConnector({ setPortalData, setPortalMode }) {
+  const [taskStatus, setTaskStatus] = useState(null);
+  const [taskText, setTaskText] = useState(sampleScheduledTaskJson);
+  const [mappedResult, setMappedResult] = useState(null);
+  const [taskMessage, setTaskMessage] = useState('');
+  const refreshTaskStatus = async () => {
+    try {
+      const status = await api('/scheduled-tasks/status', {}, { method: 'GET' });
+      setTaskStatus(status);
+    } catch (error) {
+      setTaskStatus({ ok: false, mode: 'unavailable', note: error.message, taskCatalog: [] });
+    }
+  };
+  const ingestTaskResult = async () => {
+    setTaskMessage('');
+    try {
+      const payload = JSON.parse(taskText);
+      const result = await api('/scheduled-tasks/ingest', payload);
+      setMappedResult(result);
+      setTaskMessage(result.ok ? '定时任务结果已接收并映射为门户发布草稿。' : '接收失败。');
+    } catch (error) {
+      setTaskMessage(`接收失败：${error.message}`);
+    }
+  };
+  const publishMappedResult = async () => {
+    if (!mappedResult?.portalPatch) {
+      setTaskMessage('请先接收并映射定时任务结果。');
+      return;
+    }
+    try {
+      const merged = mergePortalData(mappedResult.portalPatch);
+      localStorage.setItem(storageKey, JSON.stringify(merged));
+      setPortalData(merged);
+      setPortalMode('scheduled-task-local');
+      try {
+        const saved = await api('/portal/publish', { applicantId: mappedResult.applicantId || 'app-001', portalData: merged });
+        if (saved.portalData) {
+          setPortalData(saved.portalData);
+          setPortalMode(saved.mode || 'scheduled-task-api');
+        }
+      } catch {}
+      setTaskMessage('顾问已将定时任务结果发布到申请者门户。');
+    } catch (error) {
+      setTaskMessage(`发布失败：${error.message}`);
+    }
+  };
+  useEffect(() => { refreshTaskStatus(); }, []);
+  return <section className="panel">
+    <div className="section-title"><div><h2>定时任务包接入</h2><p className="muted">已识别 <b>deutschos-scheduled-tasks-bundle</b>。小浣熊平台定时任务无需重复创建；这里负责接收运行结果、映射为门户数据，并由顾问审核发布。</p></div><button onClick={refreshTaskStatus}>刷新接入状态</button></div>
+    <section className="grid-4 compact-grid">
+      <article className="metric"><span>任务包</span><b>{taskStatus?.bundle || 'deutschos-scheduled-tasks-bundle'}</b><small>小浣熊平台已创建</small></article>
+      <article className="metric"><span>任务数量</span><b>{taskStatus?.taskCount ?? 6}</b><small>Deadline / 官网 / 材料 / 风险 / 周报 / 预警</small></article>
+      <article className="metric"><span>接入模式</span><b>{taskStatus?.mode || '检测中'}</b><small>POST ingest 或复制 JSON</small></article>
+      <article className="metric"><span>最近映射</span><b>{mappedResult?.summary?.risks ?? 0} 风险</b><small>{mappedResult?.summary?.tasks ?? 0} 任务 · {mappedResult?.summary?.programs ?? 0} 项目</small></article>
+    </section>
+    <div className="two-col">
+      <div><h3>运行结果 JSON</h3><textarea className="json-box" value={taskText} onChange={e => setTaskText(e.target.value)} /><div className="actions"><button className="secondary" onClick={ingestTaskResult}>接收并映射</button><button className="primary" onClick={publishMappedResult}>顾问审核后发布</button></div>{taskMessage && <div className="success-msg">{taskMessage}</div>}</div>
+      <div><h3>任务目录与映射</h3><div className="mini-table">{(taskStatus?.taskCatalog || []).map(t => <div key={t.taskId}><b>{t.name}</b><Status value={t.frequency} /><small>{t.description}</small><small>映射：{(t.mapsTo || []).join(' / ')}</small></div>)}</div></div>
+    </div>
+    {mappedResult && <pre className="json-preview">{JSON.stringify(mappedResult, null, 2)}</pre>}
+  </section>;
 }
 
 function AdminConsole({ portalStatus, authStatus, refreshStatus }) {
@@ -486,7 +587,7 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus }) {
       <div>
         <h2>第十步待完成动作</h2>
         <ol className="check-list">{(authStatus?.requiredActions || ['执行 supabase/step10-auth-rbac.sql', '在 Supabase Authentication 创建用户', '在 Vercel 配置 SUPABASE_ANON_KEY 并 Redeploy']).map(x => <li key={x}>{x}</li>)}</ol>
-        <div className="schema-help"><b>Auth API：</b><code>/api/auth/status</code><code>/api/auth/login</code><code>/api/auth/logout</code></div>
+        <div className="schema-help"><b>Auth API：</b><code>/api/auth/status</code><code>/api/auth/login</code><code>/api/auth/logout</code></div><div className="schema-help"><b>定时任务 API：</b><code>/api/scheduled-tasks/status</code><code>/api/scheduled-tasks/ingest</code><code>deutschos-scheduled-tasks-bundle</code></div>
       </div>
     </section>
     <section className="panel two-col"><div><h2>账号与权限</h2><table><thead><tr><th>角色</th><th>账号</th><th>权限重点</th></tr></thead><tbody>{accounts.map(a => <tr key={a.role}><td>{a.label}</td><td>{a.email}</td><td>{a.role === 'student' ? '编辑资料、查看审核后结果、完成任务' : a.role === 'consultant' ? '审核专家输出、发布周报、跟进申请者' : '管理用户、项目库、专家团规则和定时任务'}</td></tr>)}</tbody></table></div><div><h2>每周定时任务配置</h2><div className="timeline"><div><b>每周一 09:00</b><p>读取所有活跃申请者档案</p></div><div><b>09:10</b><p>检查 APS、语言、材料、deadline、网申状态</p></div><div><b>09:30</b><p>生成顾问内部版周报与申请者可见版草稿</p></div><div><b>顾问审核后</b><p>发布到申请者门户并写入数据库快照</p></div></div></div></section>
