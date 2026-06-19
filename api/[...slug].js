@@ -91,8 +91,17 @@ export default async function handler(req, res) {
   const path = `/${slug}`.replace(/\/+/g, '/');
 
   try {
-    if (req.method === 'GET' && (path === '/health' || path === '/')) {
-      return res.status(200).json({ ok: true, service: 'deutschos-vercel-api', version: '0.4.0-vercel' });
+    if (req.method === 'GET' && (path === '/version' || path === '/health' || path === '/')) {
+      return res.status(200).json({
+        ok: true,
+        service: 'deutschos-vercel-api',
+        step: 'Step 10',
+        version: 'auth-rbac-2026-06-19',
+        apiVersion: 'auth-rbac-2026-06-19',
+        commitHint: 'catch-all-version-probe',
+        authRoutes: ['/api/auth/status', '/api/auth/login', '/api/auth/logout'],
+        portalRoutes: ['/api/portal/status', '/api/portal/read', '/api/portal/publish']
+      });
     }
     if (path.startsWith('/portal/')) {
       const result = await handlePortalRequest({ method: req.method, path, body, query: req.query });
