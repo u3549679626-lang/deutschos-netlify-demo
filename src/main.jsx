@@ -5,24 +5,17 @@ import './styles.css';
 
 const api = async (path, payload = {}, options = {}) => {
   const method = options.method || 'POST';
-  const request = async (base) => {
-    const init = {
-      method,
-      headers: { 'Content-Type': 'application/json' }
-    };
-    const query = method === 'GET' && payload && Object.keys(payload).length
-      ? `?${new URLSearchParams(payload).toString()}`
-      : '';
-    if (method !== 'GET') init.body = JSON.stringify(payload);
-    const res = await fetch(`${base}${path}${query}`, init);
-    if (!res.ok) throw new Error(`API ${path} failed via ${base}`);
-    return res.json();
+  const init = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
   };
-  try {
-    return await request('/api');
-  } catch (error) {
-    return request('/.netlify/functions/api');
-  }
+  const query = method === 'GET' && payload && Object.keys(payload).length
+    ? `?${new URLSearchParams(payload).toString()}`
+    : '';
+  if (method !== 'GET') init.body = JSON.stringify(payload);
+  const res = await fetch(`/api${path}${query}`, init);
+  if (!res.ok) throw new Error(`API ${path} failed on Vercel catch-all API`);
+  return res.json();
 };
 
 const accounts = [
