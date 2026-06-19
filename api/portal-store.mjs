@@ -124,7 +124,7 @@ function getPortalStatus() {
   const env = getEnv();
   return {
     ok: true,
-    step: 'Step 8 · Supabase 真实接入配置诊断',
+    step: 'Step 10 · Supabase Auth 与持久化状态诊断',
     mode: supabaseConfigured() ? 'supabase-configured' : 'fallback-not-configured',
     supabaseConfigured: supabaseConfigured(),
     environment: {
@@ -135,14 +135,14 @@ function getPortalStatus() {
     requiredActions: supabaseConfigured() ? [
       '执行一次 /api/portal/publish 验证 portal_snapshots 写入',
       '登录 Supabase Table Editor 检查 portal_snapshots 最新记录',
-      '后续接入真实 Auth 与 RLS 多用户隔离'
+      '继续配置 SUPABASE_ANON_KEY、Auth 用户与 user_roles 角色映射'
     ] : [
       '在 Supabase 创建项目并执行 supabase/schema.sql',
       '在 Vercel Project Settings → Environment Variables 配置 SUPABASE_URL',
       '在 Vercel Project Settings → Environment Variables 配置 SUPABASE_SERVICE_ROLE_KEY',
       '重新部署 Vercel 后复查 /api/portal/status 是否变为 supabase-configured'
     ],
-    schemaFile: 'supabase/schema.sql',
+    schemaFile: 'supabase/schema.sql + supabase/step10-auth-rbac.sql',
     securityNote: 'SUPABASE_SERVICE_ROLE_KEY 只能放在服务端环境变量，严禁写入前端或提交到 GitHub。',
     checkedAt: now()
   };

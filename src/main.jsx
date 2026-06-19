@@ -10,8 +10,11 @@ const api = async (path, payload = {}, options = {}) => {
       method,
       headers: { 'Content-Type': 'application/json' }
     };
+    const query = method === 'GET' && payload && Object.keys(payload).length
+      ? `?${new URLSearchParams(payload).toString()}`
+      : '';
     if (method !== 'GET') init.body = JSON.stringify(payload);
-    const res = await fetch(`${base}${path}`, init);
+    const res = await fetch(`${base}${path}${query}`, init);
     if (!res.ok) throw new Error(`API ${path} failed via ${base}`);
     return res.json();
   };
@@ -262,33 +265,58 @@ function Status({ value }) {
   return <span className={`pill ${cls}`}>{value}</span>;
 }
 
-function Login({ onLogin }) {
+function Login({ onLogin, authStatus }) {
   const [email, setEmail] = useState('student@demo.com');
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
-  const submit = (account) => {
-    const target = account || accounts.find(a => a.email === email && a.password === password);
-    if (!target) return setError('演示账号或密码不正确，请使用页面下方提供的账号。');
+  const [loading, setLoading] = useState(false);
+  const submit = async (account) => {
+    const targetEmail = account?.email || email;
+    const targetPassword = account?.password || password;
+    setLoading(true);
     setError('');
-    onLogin(target);
+    try {
+      const data = await api('/auth/login', { email: targetEmail, password: targetPassword });
+      if (!data.ok) throw new Error(data.error || '登录失败');
+      onLogin({
+        role: data.user.role,
+        label: accounts.find(a => a.role === data.user.role)?.label || data.user.role,
+        email: data.user.email,
+        name: data.user.name,
+        applicantId: data.user.applicantId || 'app-001',
+        assignedApplicants: data.user.assignedApplicants || [],
+        authMode: data.mode,
+        session: data.session
+      });
+    } catch (err) {
+      const fallback = account || accounts.find(a => a.email === targetEmail && a.password === targetPassword);
+      if (fallback) {
+        onLogin({ ...fallback, applicantId: fallback.role === 'student' ? 'app-001' : null, authMode: 'client-demo-fallback' });
+      } else {
+        setError(err.message || '登录失败，请检查账号或 Auth 配置。');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
   return <div className="login-shell">
     <section className="login-hero">
-      <div className="eyebrow">DeutschOS Step 8 · Supabase 接入诊断</div>
-      <h1>前台用户录入，后台小浣熊专家团工作，顾问审核后同步展示</h1>
-      <p>本版 Demo 将原专家团工作台升级为三角色门户：申请者提交资料并查看周报，顾问审核小浣熊后台输出，管理员维护项目库、专家团规则和每周定时任务。</p>
-      <div className="flow-strip"><span>申请者录入</span><b>→</b><span>小浣熊后台分析</span><b>→</b><span>顾问审核</span><b>→</b><span>前台展示</span></div>
+      <div className="eyebrow">DeutschOS Step 10 · Auth 与多用户权限隔离</div>
+      <h1>从演示账号升级到 Supabase Auth 与角色权限控制</h1>
+      <p>申请者、顾问、管理员通过统一登录入口进入系统。真实 Auth 配置完成后，系统会按 user_roles 与 consultant_applicants 控制 applicantId、角色和可见数据。</p>
+      <div className="flow-strip"><span>Supabase Auth</span><b>→</b><span>角色映射</span><b>→</b><span>数据隔离</span><b>→</b><span>顾问审核发布</span></div>
     </section>
     <section className="login-card">
-      <h2>演示登录</h2>
+      <h2>登录门户</h2>
+      <div className="auth-status"><b>Auth 状态</b><Status value={authStatus?.mode || '检测中'} /><small>{authStatus?.configured?.SUPABASE_ANON_KEY ? '已配置 SUPABASE_ANON_KEY，可使用真实 Auth 用户。' : '尚未配置 SUPABASE_ANON_KEY 或 Auth 用户，演示账号兜底可用。'}</small></div>
       <label>邮箱<input value={email} onChange={e => setEmail(e.target.value)} /></label>
       <label>密码<input type="password" value={password} onChange={e => setPassword(e.target.value)} /></label>
       {error && <div className="error">{error}</div>}
-      <button className="primary" onClick={() => submit()}>登录门户</button>
+      <button className="primary" disabled={loading} onClick={() => submit()}>{loading ? '登录中…' : '登录门户'}</button>
       <div className="demo-accounts">
         {accounts.map(a => <button key={a.role} onClick={() => submit(a)}><b>{a.label}</b><small>{a.email} / demo123</small></button>)}
       </div>
-      <p className="note">第一版为演示登录，不接真实注册；后续可升级 Supabase Auth。</p>
+      <p className="note">真实上线需要在 Supabase Authentication 中创建用户，并在 user_roles 表维护角色。</p>
     </section>
   </div>;
 }
@@ -300,7 +328,7 @@ function Shell({ user, onLogout, children }) {
       <nav>
         <a>首页</a><a>申请档案</a><a>项目 / 任务</a><a>周报</a><a>顾问审核</a>
       </nav>
-      <div className="user-box"><span>当前角色</span><b>{user.label}</b><small>{user.email}</small><button onClick={onLogout}>退出登录</button></div>
+      <div className="user-box"><span>当前角色</span><b>{user.label}</b><small>{user.email}</small><small>{user.authMode || 'demo'} · {user.applicantId || '全局/顾问视图'}</small><button onClick={onLogout}>退出登录</button></div>
     </aside>
     <main className="workspace">{children}</main>
   </div>;
@@ -374,7 +402,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
       }
       const merged = mergePortalData(payload);
       try {
-        const result = await api('/portal/publish', { applicantId: payload.applicantId || 'app-001', portalData: merged });
+        const result = await api('/portal/publish', { applicantId: payload.applicantId || portalData.applicant?.id || 'app-001', portalData: merged });
         const published = result.portalData || merged;
         localStorage.setItem(storageKey, JSON.stringify(published));
         setPortalData(published);
@@ -418,7 +446,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
   </>;
 }
 
-function AdminConsole({ portalStatus, refreshStatus }) {
+function AdminConsole({ portalStatus, authStatus, refreshStatus }) {
   const env = portalStatus?.environment || {};
   const actions = portalStatus?.requiredActions || [];
   return <>
@@ -445,6 +473,22 @@ function AdminConsole({ portalStatus, refreshStatus }) {
         <div className="schema-help"><b>建表脚本：</b><code>supabase/schema.sql</code><code>/api/portal/status</code><code>/api/portal/publish</code></div>
       </div>
     </section>
+    <section className="panel two-col">
+      <div>
+        <h2>Auth 与角色权限诊断</h2>
+        <div className="review-item"><b>当前 Auth 模式</b><Status value={authStatus?.mode || '检测中'} /><p>Step 10 将演示登录升级为 Supabase Auth + user_roles + consultant_applicants 的多角色隔离。</p></div>
+        <table><thead><tr><th>配置项</th><th>状态</th><th>说明</th></tr></thead><tbody>
+          <tr><td>SUPABASE_ANON_KEY</td><td><Status value={authStatus?.configured?.SUPABASE_ANON_KEY ? '已配置' : '未配置'} /></td><td>真实邮箱密码登录需要此变量</td></tr>
+          <tr><td>user_roles</td><td><Status value={authStatus?.roleTableReady ? '已就绪' : '待执行 SQL'} /></td><td>维护 student / consultant / admin 角色</td></tr>
+          <tr><td>角色记录</td><td>{authStatus?.roleCount ?? 0}</td><td>当前可检测到的角色映射数量</td></tr>
+        </tbody></table>
+      </div>
+      <div>
+        <h2>第十步待完成动作</h2>
+        <ol className="check-list">{(authStatus?.requiredActions || ['执行 supabase/step10-auth-rbac.sql', '在 Supabase Authentication 创建用户', '在 Vercel 配置 SUPABASE_ANON_KEY 并 Redeploy']).map(x => <li key={x}>{x}</li>)}</ol>
+        <div className="schema-help"><b>Auth API：</b><code>/api/auth/status</code><code>/api/auth/login</code><code>/api/auth/logout</code></div>
+      </div>
+    </section>
     <section className="panel two-col"><div><h2>账号与权限</h2><table><thead><tr><th>角色</th><th>账号</th><th>权限重点</th></tr></thead><tbody>{accounts.map(a => <tr key={a.role}><td>{a.label}</td><td>{a.email}</td><td>{a.role === 'student' ? '编辑资料、查看审核后结果、完成任务' : a.role === 'consultant' ? '审核专家输出、发布周报、跟进申请者' : '管理用户、项目库、专家团规则和定时任务'}</td></tr>)}</tbody></table></div><div><h2>每周定时任务配置</h2><div className="timeline"><div><b>每周一 09:00</b><p>读取所有活跃申请者档案</p></div><div><b>09:10</b><p>检查 APS、语言、材料、deadline、网申状态</p></div><div><b>09:30</b><p>生成顾问内部版周报与申请者可见版草稿</p></div><div><b>顾问审核后</b><p>发布到申请者门户并写入数据库快照</p></div></div></div></section>
     <section className="panel two-col"><div><h2>项目库质量</h2>{projectLibrary.map(p => <div className="review-item" key={p.school}><b>{p.school}</b><Status value={p.type} /><p>{p.records} 条记录 · {p.status}</p></div>)}</div><div><h2>专家团配置边界</h2><ul className="check-list"><li>所有 deadline、NC、语言、VPD、APS 信息必须标注来源和日期。</li><li>专家团输出默认进入待顾问审核，不直接同步给申请者。</li><li>用户前台仅展示顾问审核后的任务、周报和建议。</li><li>不承诺录取，不替代学校官网、uni-assist、DAAD、APS 或人工判断。</li></ul></div></section>
   </>;
@@ -460,6 +504,7 @@ function WeeklyReport({ applicantOnly = false, report = weeklyReport }) {
 
 function App() {
   const [user, setUser] = useState(null);
+  const [authStatus, setAuthStatus] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [portalData, setPortalData] = useState(() => loadPublishedData());
   const [portalMode, setPortalMode] = useState('localStorage');
@@ -476,7 +521,7 @@ function App() {
 
   const refreshPortal = async () => {
     try {
-      const result = await api('/portal/read', { applicantId: 'app-001' });
+      const result = await api('/portal/read', { applicantId: user?.applicantId || 'app-001' });
       if (result.portalData) {
         setPortalData(result.portalData);
         setPortalMode(result.mode || 'api');
@@ -508,6 +553,20 @@ function App() {
     apsStatus: baseApplicant.apsStatus,
     experiences: 'Python 数据分析课程项目、用户行为分析 Demo、课程论文与毕业设计素材（演示）'
   }), []);
+  useEffect(() => {
+    api('/auth/status', {}, { method: 'GET' }).then(setAuthStatus).catch(() => setAuthStatus({ mode: 'auth-status-unavailable' }));
+  }, []);
+
+  useEffect(() => {
+    const applicantId = user?.applicantId || 'app-001';
+    api('/portal/read', { applicantId }, { method: 'GET' }).then(data => {
+      if (data?.portalData) {
+        setPortalData(data.portalData);
+        localStorage.setItem(storageKey, JSON.stringify(data.portalData));
+        setPortalMode(data.mode || 'api');
+      }
+    }).catch(() => setPortalMode('localStorage'));
+  }, [user?.applicantId]);
   const runDemo = async () => {
     setToast('正在调用 Vercel API 计算成绩和项目匹配…');
     try {
@@ -518,12 +577,12 @@ function App() {
       setToast(error.message || '接口调用失败');
     }
   };
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) return <Login onLogin={setUser} authStatus={authStatus} />;
   return <Shell user={user} onLogout={() => setUser(null)}>
     {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
     {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} portalMode={portalMode} />}
     {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} portalMode={portalMode} setPortalMode={setPortalMode} refreshPortal={refreshPortal} />}
-    {user.role === 'admin' && <AdminConsole portalStatus={portalStatus} refreshStatus={refreshStatus} />}
+    {user.role === 'admin' && <AdminConsole portalStatus={portalStatus} authStatus={authStatus} refreshStatus={refreshStatus} />}
   </Shell>;
 }
 
