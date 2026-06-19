@@ -124,20 +124,136 @@ const projectLibrary = [
   { school: 'TH Köln', type: 'FH/HAW', records: 1, status: '页面链接待重新核验' }
 ];
 
-const sampleSyncJson = JSON.stringify({
+const storageKey = 'deutschos.publishedApplicant.v1';
+
+const defaultPortalData = {
+  schemaVersion: 'deutschos-sync-v1',
+  applicant: baseApplicant,
+  materials,
+  programs: approvedPrograms,
+  tasks: weeklyTasks,
+  weeklyReport,
+  expertOutputs,
+  consultantReview: {
+    status: '已发布演示基线',
+    reviewer: 'DeutschOS 顾问',
+    reviewedAt: '2026-06-18',
+    note: '这是系统内置演示数据；顾问可在工作台粘贴小浣熊后台 JSON 后发布覆盖。'
+  }
+};
+
+const sampleSyncPayload = {
+  schemaVersion: 'deutschos-sync-v1',
   applicantId: 'app-001',
-  source: '小浣熊后台专家团',
+  source: {
+    system: '小浣熊平台',
+    modules: ['专家中心', '数据分析', '每周一定时任务'],
+    generatedAt: '2026-06-22T09:00:00+08:00'
+  },
   reviewRequired: true,
-  publishToApplicant: false,
-  weeklySummary: '后台专家团建议本周优先补齐课程描述、推进 APS，并复核三个项目的申请路径。',
+  consultantReview: {
+    status: '待顾问审核',
+    reviewer: 'DeutschOS 顾问',
+    note: '顾问确认后发布给申请者；未经审核不得直接展示。'
+  },
+  applicant: {
+    currentStage: '材料补强与项目路径复核',
+    progress: 56,
+    lastPublished: '2026-06-22'
+  },
+  programs: [
+    {
+      university: 'Saarland University',
+      program: 'Data Science and Artificial Intelligence',
+      tier: '匹配',
+      status: '优先推进',
+      deadline: '待官网最终复核',
+      path: '官网申请入口；是否需 uni-assist 待复核',
+      risk: '中',
+      source: 'https://www.uni-saarland.de/',
+      checkedAt: '2026-06-22',
+      consultantNote: '目标方向匹配度较高，本周优先补统计/编程课程描述。'
+    },
+    {
+      university: 'TH Köln',
+      program: 'Web and Data Science',
+      tier: '稳妥',
+      status: '可作为保底推进',
+      deadline: '待官网最终复核',
+      path: '官网 / 申请平台待核验',
+      risk: '中',
+      source: 'https://www.th-koeln.de/',
+      checkedAt: '2026-06-22',
+      consultantNote: '适合作为 HAW/FH 类型稳妥项目，但仍需核验语言和课程要求。'
+    }
+  ],
   tasks: [
-    { title: '补充数据库课程描述', owner: '申请者', priority: '高' },
-    { title: '顾问复核 Saarland 语言要求', owner: '顾问', priority: '高' }
+    { title: '上传统计学、数据库、Python 三门课程描述', owner: '申请者', due: '本周五', priority: '高', status: '未完成' },
+    { title: '确认 APS 材料清单并反馈准备进度', owner: '申请者', due: '本周四', priority: '高', status: '未完成' },
+    { title: '顾问复核 Saarland 与 TH Köln 申请路径', owner: '顾问', due: '本周三', priority: '高', status: '待处理' }
   ],
   risks: [
-    { type: 'APS', level: '高', description: 'APS 未开始，影响后续申请节奏。' }
+    { type: 'APS', level: '高', description: 'APS 未开始，若继续延迟会影响后续递交节奏。', suggestedAction: '本周完成 APS 材料清单确认。', visibleToApplicant: true },
+    { type: '课程匹配', level: '中', description: '课程描述缺失导致 ECTS 匹配无法最终确认。', suggestedAction: '优先补统计、编程、数据库课程描述。', visibleToApplicant: true },
+    { type: '官网核验', level: '中', description: 'deadline、VPD、uni-assist 路径仍需人工复核。', suggestedAction: '由顾问本周完成官网核验。', visibleToApplicant: false }
+  ],
+  weeklyReport: {
+    title: '第 2 周申请推进周报',
+    period: '2026-06-22 至 2026-06-28',
+    summary: '本周重点从“初步建档”进入“材料补强与项目路径复核”。申请者需补课程描述和 APS 进度，顾问需确认 Saarland 与 TH Köln 的官方申请路径。',
+    done: ['完成三角色门户上线', '完成德国制成绩参考换算：2.20', '完成第一轮项目分层草案'],
+    next: ['补充课程描述', '推进 APS 材料清单', '复核项目 deadline / VPD / uni-assist', '整理 CV 与动机信素材'],
+    risks: ['APS 未开始', '课程描述缺失', '部分项目官网路径待人工复核']
+  },
+  expertOutputs: [
+    { expert: '申请总控专家', type: '总控结论', status: '顾问已审核', visible: true, result: '当前优先级为课程描述补强、APS 启动和两个匹配/稳妥项目路径复核。' },
+    { expert: '院校项目核验专家', type: '项目核验', status: '待人工复核', visible: false, result: 'Saarland 与 TH Köln 需确认本申请季 deadline、语言要求和平台路径。' },
+    { expert: '申请风控与合规专家', type: '合规风控', status: '强制保留', visible: true, result: '所有官网要求以学校官方页面、uni-assist、DAAD、APS 和顾问人工复核为准；不承诺录取。' }
   ]
-}, null, 2);
+};
+
+const sampleSyncJson = JSON.stringify(sampleSyncPayload, null, 2);
+
+function mergePortalData(payload) {
+  return {
+    schemaVersion: payload.schemaVersion || 'deutschos-sync-v1',
+    applicant: { ...baseApplicant, ...(payload.applicant || {}) },
+    materials: payload.materials || materials,
+    programs: payload.programs || approvedPrograms,
+    tasks: payload.tasks || weeklyTasks,
+    risks: payload.risks || [],
+    weeklyReport: payload.weeklyReport || weeklyReport,
+    expertOutputs: payload.expertOutputs || expertOutputs,
+    consultantReview: {
+      status: '顾问已审核并发布',
+      reviewer: 'DeutschOS 顾问',
+      reviewedAt: new Date().toISOString().slice(0, 10),
+      note: payload.consultantReview?.note || '顾问已将小浣熊后台结果审核后发布给申请者。'
+    },
+    source: payload.source || { system: '手动同步', generatedAt: new Date().toISOString() }
+  };
+}
+
+function validateSyncPayload(payload) {
+  const errors = [];
+  if (!payload || typeof payload !== 'object') errors.push('根对象必须是 JSON object');
+  if (!payload.schemaVersion) errors.push('缺少 schemaVersion，建议使用 deutschos-sync-v1');
+  if (!payload.applicantId) errors.push('缺少 applicantId');
+  if (payload.programs && !Array.isArray(payload.programs)) errors.push('programs 必须是数组');
+  if (payload.tasks && !Array.isArray(payload.tasks)) errors.push('tasks 必须是数组');
+  if (payload.risks && !Array.isArray(payload.risks)) errors.push('risks 必须是数组');
+  if (payload.weeklyReport && !payload.weeklyReport.summary) errors.push('weeklyReport 缺少 summary');
+  return errors;
+}
+
+function loadPublishedData() {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw ? JSON.parse(raw) : defaultPortalData;
+  } catch {
+    return defaultPortalData;
+  }
+}
 
 function Status({ value }) {
   const cls = /高|未|待|风险|复核|阻塞/.test(value) ? 'warn' : /已|完成|采纳|通过/.test(value) ? 'ok' : 'info';
@@ -156,7 +272,7 @@ function Login({ onLogin }) {
   };
   return <div className="login-shell">
     <section className="login-hero">
-      <div className="eyebrow">DeutschOS Step 5 · 登录式申请者门户</div>
+      <div className="eyebrow">DeutschOS Step 6 · 后台 JSON 同步闭环</div>
       <h1>前台用户录入，后台小浣熊专家团工作，顾问审核后同步展示</h1>
       <p>本版 Demo 将原专家团工作台升级为三角色门户：申请者提交资料并查看周报，顾问审核小浣熊后台输出，管理员维护项目库、专家团规则和每周定时任务。</p>
       <div className="flow-strip"><span>申请者录入</span><b>→</b><span>小浣熊后台分析</span><b>→</b><span>顾问审核</span><b>→</b><span>前台展示</span></div>
@@ -192,48 +308,99 @@ function Header({ eyebrow, title, desc, actions }) {
   return <header className="page-head"><div><span>{eyebrow}</span><h1>{title}</h1><p>{desc}</p></div>{actions && <div className="head-actions">{actions}</div>}</header>;
 }
 
-function StudentPortal({ runResult, onRunDemo }) {
-  const visibleOutputs = expertOutputs.filter(x => x.visible);
+function StudentPortal({ runResult, onRunDemo, portalData }) {
+  const applicant = portalData.applicant;
+  const portalMaterials = portalData.materials || materials;
+  const portalPrograms = portalData.programs || approvedPrograms;
+  const portalTasks = portalData.tasks || weeklyTasks;
+  const portalReport = portalData.weeklyReport || weeklyReport;
+  const portalOutputs = portalData.expertOutputs || expertOutputs;
+  const visibleOutputs = portalOutputs.filter(x => x.visible);
+  const visibleRisks = (portalData.risks || []).filter(r => r.visibleToApplicant !== false);
   return <>
     <Header eyebrow="申请者门户" title="我的德国硕士申请进度" desc="你只能看到顾问审核后发布的内容；后台专家团原始分析不会直接展示，避免误读和未经核验的信息外泄。" actions={<button className="primary" onClick={onRunDemo}>刷新初筛计算</button>} />
+    <section className="sync-banner">
+      <b>当前展示版本：{portalData.consultantReview?.status || '顾问已发布版本'}</b>
+      <span>来源：{portalData.source?.system || '内置演示数据'} · 最近发布：{applicant.lastPublished || portalData.consultantReview?.reviewedAt || '待发布'}</span>
+    </section>
     <section className="grid-4">
-      <article className="metric"><span>当前阶段</span><b>{baseApplicant.currentStage}</b><small>负责顾问：{baseApplicant.consultant}</small></article>
-      <article className="metric"><span>总体进度</span><b>{baseApplicant.progress}%</b><small>按任务、材料、项目状态估算</small></article>
-      <article className="metric"><span>德国制参考成绩</span><b>{runResult?.grade?.value || baseApplicant.germanGrade}</b><small>仅供初筛，最终以学校认定为准</small></article>
-      <article className="metric"><span>本周高风险</span><b>3 项</b><small>APS / 课程描述 / 官网复核</small></article>
+      <article className="metric"><span>当前阶段</span><b>{applicant.currentStage}</b><small>负责顾问：{applicant.consultant}</small></article>
+      <article className="metric"><span>总体进度</span><b>{applicant.progress}%</b><small>按任务、材料、项目状态估算</small></article>
+      <article className="metric"><span>德国制参考成绩</span><b>{runResult?.grade?.value || applicant.germanGrade}</b><small>仅供初筛，最终以学校认定为准</small></article>
+      <article className="metric"><span>本周高风险</span><b>{visibleRisks.filter(r => r.level === '高').length || 1} 项</b><small>仅展示顾问允许用户可见的风险</small></article>
     </section>
     <section className="panel two-col">
       <div><h2>我的资料摘要</h2><div className="info-list">
-        <p><b>本科：</b>{baseApplicant.university} · {baseApplicant.major}</p>
-        <p><b>目标：</b>{baseApplicant.targetDirection} · {baseApplicant.intake}</p>
-        <p><b>语言：</b>{baseApplicant.english}</p>
-        <p><b>APS：</b><Status value={baseApplicant.apsStatus} /></p>
+        <p><b>本科：</b>{applicant.university} · {applicant.major}</p>
+        <p><b>目标：</b>{applicant.targetDirection} · {applicant.intake}</p>
+        <p><b>语言：</b>{applicant.english}</p>
+        <p><b>APS：</b><Status value={applicant.apsStatus} /></p>
       </div></div>
-      <div><h2>材料状态</h2><div className="mini-table">{materials.map(m => <div key={m.name}><b>{m.name}</b><Status value={m.status} /><small>{m.note}</small></div>)}</div></div>
+      <div><h2>材料状态</h2><div className="mini-table">{portalMaterials.map(m => <div key={m.name}><b>{m.name}</b><Status value={m.status} /><small>{m.note}</small></div>)}</div></div>
     </section>
-    <section className="panel"><h2>顾问发布的申请项目</h2><div className="cards">{approvedPrograms.map(p => <article className="program" key={p.program}><div><span>{p.university}</span><h3>{p.program}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>来源入口</dt><dd><a href={p.source} target="_blank">{p.source}</a></dd></dl></article>)}</div></section>
-    <section className="panel"><h2>本周我的任务</h2><TaskTable rows={weeklyTasks.filter(t => t.owner.includes('申请者'))} /></section>
-    <section className="panel two-col"><WeeklyReport applicantOnly /><div><h2>已发布专家团结论</h2>{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
+    <section className="panel"><h2>顾问发布的申请项目</h2><div className="cards">{portalPrograms.map(p => <article className="program" key={`${p.university}-${p.program}`}><div><span>{p.university}</span><h3>{p.program}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>最近核验</dt><dd>{p.checkedAt || '待官网复核'}</dd><dt>来源入口</dt><dd><a href={p.source} target="_blank">{p.source}</a></dd></dl></article>)}</div></section>
+    <section className="panel two-col"><div><h2>本周我的任务</h2><TaskTable rows={portalTasks.filter(t => t.owner?.includes('申请者'))} /></div><div><h2>顾问发布的风险提醒</h2>{visibleRisks.length ? visibleRisks.map(r => <div className="review-item" key={`${r.type}-${r.description}`}><b>{r.type}</b><Status value={r.level} /><p>{r.description}</p><small>{r.suggestedAction}</small></div>) : <p className="muted">暂无新增用户可见风险。</p>}</div></section>
+    <section className="panel two-col"><WeeklyReport applicantOnly report={portalReport} /><div><h2>已发布专家团结论</h2>{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
   </>;
 }
 
-function ConsultantWorkbench({ onRunDemo, runResult }) {
+function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData }) {
   const [syncText, setSyncText] = useState(sampleSyncJson);
   const [syncPreview, setSyncPreview] = useState(null);
+  const [syncErrors, setSyncErrors] = useState([]);
+  const [publishMessage, setPublishMessage] = useState('');
   const parseSync = () => {
-    try { setSyncPreview(JSON.parse(syncText)); } catch { setSyncPreview({ error: 'JSON 格式错误，请检查小浣熊后台导出内容。' }); }
+    setPublishMessage('');
+    try {
+      const payload = JSON.parse(syncText);
+      const errors = validateSyncPayload(payload);
+      setSyncErrors(errors);
+      setSyncPreview(payload);
+    } catch {
+      setSyncPreview(null);
+      setSyncErrors(['JSON 格式错误，请检查小浣熊后台导出内容。']);
+    }
+  };
+  const publishSync = () => {
+    try {
+      const payload = syncPreview || JSON.parse(syncText);
+      const errors = validateSyncPayload(payload);
+      if (errors.length) {
+        setSyncErrors(errors);
+        setPublishMessage('存在校验错误，暂不能发布。');
+        return;
+      }
+      const merged = mergePortalData(payload);
+      localStorage.setItem(storageKey, JSON.stringify(merged));
+      setPortalData(merged);
+      setPublishMessage('已发布到申请者门户。请切换申请者账号查看更新。');
+    } catch {
+      setPublishMessage('发布失败：JSON 无法解析。');
+    }
+  };
+  const resetPublished = () => {
+    localStorage.removeItem(storageKey);
+    setPortalData(defaultPortalData);
+    setSyncPreview(null);
+    setSyncErrors([]);
+    setPublishMessage('已恢复内置演示基线数据。');
   };
   return <>
-    <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button></>} />
+    <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button><button className="primary" onClick={publishSync}>顾问审核后发布</button></>} />
     <section className="grid-4">
       <article className="metric"><span>负责申请者</span><b>1</b><small>演示账号</small></article>
-      <article className="metric"><span>待审核输出</span><b>3</b><small>项目核验 / 课程匹配 / 文书素材</small></article>
-      <article className="metric"><span>本周顾问待办</span><b>{weeklyTasks.filter(t => t.owner.includes('顾问')).length}</b><small>需在周报发布前处理</small></article>
-      <article className="metric"><span>高风险学生</span><b>1</b><small>APS 未开始</small></article>
+      <article className="metric"><span>已发布项目</span><b>{portalData.programs?.length || 0}</b><small>申请者门户当前可见</small></article>
+      <article className="metric"><span>本周顾问待办</span><b>{(portalData.tasks || []).filter(t => t.owner?.includes('顾问')).length}</b><small>需在周报发布前处理</small></article>
+      <article className="metric"><span>用户可见风险</span><b>{(portalData.risks || []).filter(r => r.visibleToApplicant !== false).length}</b><small>经顾问筛选</small></article>
     </section>
-    <section className="panel two-col"><div><h2>申请者列表</h2><div className="applicant-row"><b>{baseApplicant.name}</b><Status value={baseApplicant.currentStage} /><small>{baseApplicant.targetDirection} · 进度 {baseApplicant.progress}% · APS {baseApplicant.apsStatus}</small></div></div><div><h2>计算结果</h2><p>德国制成绩：<b>{runResult?.grade?.value || '待运行'}</b></p><p>项目数量：<b>{runResult?.programs?.length || approvedPrograms.length}</b></p><p className="note">计算结果仍需顾问审核，不能直接等同录取判断。</p></div></section>
-    <section className="panel"><h2>小浣熊后台 JSON 同步入口</h2><p className="muted">第一版采用“JSON 上传 / 粘贴”方式：专家团在小浣熊后台完成分析后，顾问把结构化结果粘贴到这里，审核后发布给申请者。</p><textarea className="json-box" value={syncText} onChange={e => setSyncText(e.target.value)} />{syncPreview && <pre className={syncPreview.error ? 'json-preview error' : 'json-preview'}>{JSON.stringify(syncPreview, null, 2)}</pre>}</section>
-    <section className="panel two-col"><div><h2>专家团输出审核</h2>{expertOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p><div className="actions"><button>采纳</button><button>修改后采纳</button><button>标记待复核</button><button>不展示</button></div></div>)}</div><div><WeeklyReport /><h2>顾问本周待办</h2><TaskTable rows={weeklyTasks.filter(t => t.owner.includes('顾问'))} /></div></section>
+    <section className="panel two-col"><div><h2>申请者列表</h2><div className="applicant-row"><b>{portalData.applicant.name}</b><Status value={portalData.applicant.currentStage} /><small>{portalData.applicant.targetDirection} · 进度 {portalData.applicant.progress}% · APS {portalData.applicant.apsStatus}</small></div></div><div><h2>计算结果</h2><p>德国制成绩：<b>{runResult?.grade?.value || '待运行'}</b></p><p>项目数量：<b>{runResult?.programs?.length || approvedPrograms.length}</b></p><p className="note">计算结果仍需顾问审核，不能直接等同录取判断。</p></div></section>
+    <section className="panel"><div className="section-title"><div><h2>小浣熊后台 JSON 同步入口</h2><p className="muted">标准链路：专家团/数据分析/定时任务在小浣熊后台完成 → 导出 JSON → 顾问粘贴 → 解析校验 → 审核发布 → 申请者门户展示。</p></div><button onClick={resetPublished}>恢复演示基线</button></div><textarea className="json-box" value={syncText} onChange={e => setSyncText(e.target.value)} />
+      <div className="schema-help"><b>必备字段：</b><code>schemaVersion</code><code>applicantId</code><code>programs[]</code><code>tasks[]</code><code>weeklyReport.summary</code><code>expertOutputs[]</code></div>
+      {syncErrors.length > 0 && <div className="error-list"><b>校验提示</b>{syncErrors.map(e => <p key={e}>{e}</p>)}</div>}
+      {publishMessage && <div className="success-msg">{publishMessage}</div>}
+      {syncPreview && <pre className="json-preview">{JSON.stringify(syncPreview, null, 2)}</pre>}
+    </section>
+    <section className="panel two-col"><div><h2>专家团输出审核</h2>{(portalData.expertOutputs || []).map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p><div className="actions"><button>采纳</button><button>修改后采纳</button><button>标记待复核</button><button>不展示</button></div></div>)}</div><div><WeeklyReport report={portalData.weeklyReport} /><h2>顾问本周待办</h2><TaskTable rows={(portalData.tasks || []).filter(t => t.owner?.includes('顾问'))} /></div></section>
   </>;
 }
 
@@ -255,13 +422,14 @@ function TaskTable({ rows }) {
   return <table><thead><tr><th>任务</th><th>负责人</th><th>截止</th><th>优先级</th><th>状态</th></tr></thead><tbody>{rows.map(t => <tr key={t.title}><td>{t.title}</td><td>{t.owner}</td><td>{t.due}</td><td><Status value={t.priority} /></td><td><Status value={t.status} /></td></tr>)}</tbody></table>;
 }
 
-function WeeklyReport({ applicantOnly = false }) {
-  return <div className="weekly"><h2>{weeklyReport.title}</h2><Status value={applicantOnly ? '顾问已发布版本' : '待顾问审核 / 可发布'} /><p>{weeklyReport.summary}</p><h3>已完成</h3><ul>{weeklyReport.done.map(x => <li key={x}>{x}</li>)}</ul><h3>下周重点</h3><ul>{weeklyReport.next.map(x => <li key={x}>{x}</li>)}</ul><h3>风险提醒</h3><ul>{weeklyReport.risks.map(x => <li key={x}>{x}</li>)}</ul></div>;
+function WeeklyReport({ applicantOnly = false, report = weeklyReport }) {
+  return <div className="weekly"><h2>{report.title}</h2><Status value={applicantOnly ? '顾问已发布版本' : '待顾问审核 / 可发布'} /><p>{report.summary}</p><h3>已完成</h3><ul>{(report.done || []).map(x => <li key={x}>{x}</li>)}</ul><h3>下周重点</h3><ul>{(report.next || []).map(x => <li key={x}>{x}</li>)}</ul><h3>风险提醒</h3><ul>{(report.risks || []).map(x => <li key={x}>{x}</li>)}</ul></div>;
 }
 
 function App() {
   const [user, setUser] = useState(null);
   const [runResult, setRunResult] = useState(null);
+  const [portalData, setPortalData] = useState(() => loadPublishedData());
   const [toast, setToast] = useState('');
   const demoProfile = useMemo(() => ({
     name: baseApplicant.name,
@@ -290,8 +458,8 @@ function App() {
   if (!user) return <Login onLogin={setUser} />;
   return <Shell user={user} onLogout={() => setUser(null)}>
     {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
-    {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} />}
-    {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} />}
+    {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} />}
+    {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} />}
     {user.role === 'admin' && <AdminConsole />}
   </Shell>;
 }
