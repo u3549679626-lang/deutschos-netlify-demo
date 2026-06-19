@@ -274,7 +274,7 @@ function Login({ onLogin }) {
   };
   return <div className="login-shell">
     <section className="login-hero">
-      <div className="eyebrow">DeutschOS Step 7 · 数据库持久化就绪</div>
+      <div className="eyebrow">DeutschOS Step 8 · Supabase 接入诊断</div>
       <h1>前台用户录入，后台小浣熊专家团工作，顾问审核后同步展示</h1>
       <p>本版 Demo 将原专家团工作台升级为三角色门户：申请者提交资料并查看周报，顾问审核小浣熊后台输出，管理员维护项目库、专家团规则和每周定时任务。</p>
       <div className="flow-strip"><span>申请者录入</span><b>→</b><span>小浣熊后台分析</span><b>→</b><span>顾问审核</span><b>→</b><span>前台展示</span></div>
@@ -418,16 +418,34 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
   </>;
 }
 
-function AdminConsole() {
+function AdminConsole({ portalStatus, refreshStatus }) {
+  const env = portalStatus?.environment || {};
+  const actions = portalStatus?.requiredActions || [];
   return <>
-    <Header eyebrow="管理员后台" title="系统运营、专家团配置与定时任务管理" desc="管理员维护三角色权限、项目库质量、专家团规则、每周一自动周报任务和同步记录。" />
+    <Header eyebrow="管理员后台" title="系统运营、专家团配置与 Supabase 接入诊断" desc="管理员维护三角色权限、项目库质量、专家团规则、每周一自动周报任务和数据库持久化配置。" actions={<button className="primary" onClick={refreshStatus}>刷新数据库状态</button>} />
     <section className="grid-4">
       <article className="metric"><span>用户角色</span><b>3 类</b><small>申请者 / 顾问 / 管理员</small></article>
       <article className="metric"><span>项目库记录</span><b>3</b><small>演示项目，待扩展数据库</small></article>
-      <article className="metric"><span>定时任务</span><b>周一</b><small>每周生成完整周报</small></article>
-      <article className="metric"><span>同步方式</span><b>JSON</b><small>后台粘贴/上传，顾问审核</small></article>
+      <article className="metric"><span>数据库模式</span><b>{portalStatus?.mode || '检测中'}</b><small>{portalStatus?.supabaseConfigured ? 'Supabase 已配置' : '当前仍为 fallback / memory'}</small></article>
+      <article className="metric"><span>同步方式</span><b>API</b><small>顾问发布 → Portal API → Supabase / fallback</small></article>
     </section>
-    <section className="panel two-col"><div><h2>账号与权限</h2><table><thead><tr><th>角色</th><th>账号</th><th>权限重点</th></tr></thead><tbody>{accounts.map(a => <tr key={a.role}><td>{a.label}</td><td>{a.email}</td><td>{a.role === 'student' ? '编辑资料、查看审核后结果、完成任务' : a.role === 'consultant' ? '审核专家输出、发布周报、跟进申请者' : '管理用户、项目库、专家团规则和定时任务'}</td></tr>)}</tbody></table></div><div><h2>每周定时任务配置</h2><div className="timeline"><div><b>每周一 09:00</b><p>读取所有活跃申请者档案</p></div><div><b>09:10</b><p>检查 APS、语言、材料、deadline、网申状态</p></div><div><b>09:30</b><p>生成顾问内部版周报与申请者可见版草稿</p></div><div><b>顾问审核后</b><p>发布到申请者门户</p></div></div></div></section>
+    <section className="panel two-col">
+      <div>
+        <h2>Supabase 配置诊断</h2>
+        <div className="review-item"><b>当前状态</b><Status value={portalStatus?.supabaseConfigured ? 'Supabase 已配置' : '待配置 Supabase'} /><p>{portalStatus?.securityNote || '正在检测环境变量状态。'}</p></div>
+        <table><thead><tr><th>环境变量</th><th>状态</th><th>说明</th></tr></thead><tbody>
+          <tr><td>SUPABASE_URL</td><td><Status value={env.SUPABASE_URL ? '已配置' : '未配置'} /></td><td>Supabase Project URL</td></tr>
+          <tr><td>SUPABASE_SERVICE_ROLE_KEY</td><td><Status value={env.SUPABASE_SERVICE_ROLE_KEY ? '已配置' : '未配置'} /></td><td>服务端写库密钥，严禁暴露到前端</td></tr>
+          <tr><td>SUPABASE_ANON_KEY</td><td><Status value={env.SUPABASE_ANON_KEY ? '已配置' : '可选'} /></td><td>后续接 Supabase Auth 时使用</td></tr>
+        </tbody></table>
+      </div>
+      <div>
+        <h2>下一步配置动作</h2>
+        <ol className="check-list">{actions.map(x => <li key={x}>{x}</li>)}</ol>
+        <div className="schema-help"><b>建表脚本：</b><code>supabase/schema.sql</code><code>/api/portal/status</code><code>/api/portal/publish</code></div>
+      </div>
+    </section>
+    <section className="panel two-col"><div><h2>账号与权限</h2><table><thead><tr><th>角色</th><th>账号</th><th>权限重点</th></tr></thead><tbody>{accounts.map(a => <tr key={a.role}><td>{a.label}</td><td>{a.email}</td><td>{a.role === 'student' ? '编辑资料、查看审核后结果、完成任务' : a.role === 'consultant' ? '审核专家输出、发布周报、跟进申请者' : '管理用户、项目库、专家团规则和定时任务'}</td></tr>)}</tbody></table></div><div><h2>每周定时任务配置</h2><div className="timeline"><div><b>每周一 09:00</b><p>读取所有活跃申请者档案</p></div><div><b>09:10</b><p>检查 APS、语言、材料、deadline、网申状态</p></div><div><b>09:30</b><p>生成顾问内部版周报与申请者可见版草稿</p></div><div><b>顾问审核后</b><p>发布到申请者门户并写入数据库快照</p></div></div></div></section>
     <section className="panel two-col"><div><h2>项目库质量</h2>{projectLibrary.map(p => <div className="review-item" key={p.school}><b>{p.school}</b><Status value={p.type} /><p>{p.records} 条记录 · {p.status}</p></div>)}</div><div><h2>专家团配置边界</h2><ul className="check-list"><li>所有 deadline、NC、语言、VPD、APS 信息必须标注来源和日期。</li><li>专家团输出默认进入待顾问审核，不直接同步给申请者。</li><li>用户前台仅展示顾问审核后的任务、周报和建议。</li><li>不承诺录取，不替代学校官网、uni-assist、DAAD、APS 或人工判断。</li></ul></div></section>
   </>;
 }
@@ -445,7 +463,17 @@ function App() {
   const [runResult, setRunResult] = useState(null);
   const [portalData, setPortalData] = useState(() => loadPublishedData());
   const [portalMode, setPortalMode] = useState('localStorage');
+  const [portalStatus, setPortalStatus] = useState(null);
   const [toast, setToast] = useState('');
+  const refreshStatus = async () => {
+    try {
+      const result = await api('/portal/status', {}, { method: 'GET' });
+      setPortalStatus(result);
+    } catch (error) {
+      setPortalStatus({ ok: false, mode: 'status-api-error', supabaseConfigured: false, environment: {}, requiredActions: ['检查 /api/portal/status 路由是否部署成功'], securityNote: error.message });
+    }
+  };
+
   const refreshPortal = async () => {
     try {
       const result = await api('/portal/read', { applicantId: 'app-001' });
@@ -463,6 +491,7 @@ function App() {
 
   useEffect(() => {
     refreshPortal();
+    refreshStatus();
   }, []);
 
   const demoProfile = useMemo(() => ({
@@ -494,7 +523,7 @@ function App() {
     {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
     {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} portalMode={portalMode} />}
     {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} portalMode={portalMode} setPortalMode={setPortalMode} refreshPortal={refreshPortal} />}
-    {user.role === 'admin' && <AdminConsole />}
+    {user.role === 'admin' && <AdminConsole portalStatus={portalStatus} refreshStatus={refreshStatus} />}
   </Shell>;
 }
 
