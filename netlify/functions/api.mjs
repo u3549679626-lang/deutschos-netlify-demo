@@ -1,5 +1,5 @@
 import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from './demo-core.mjs';
-import { handlePortalRequest } from '../../api/portal-store.mjs';
+import { handlePortalRequest } from '../../server/portal-store.mjs';
 
 const json = (statusCode, body) => ({
   statusCode,
