@@ -110,26 +110,39 @@ export const demoPrograms = [
   }
 ];
 
+export function normalizeProfile(profile = {}) {
+  const pick = (...keys) => keys.map(key => profile?.[key]).find(value => value !== undefined && value !== null && String(value).trim() !== '');
+  return {
+    ...profile,
+    averageScore: pick('averageScore', 'average', 'avg', 'meanScore', 'score', 'rawAverage', 'gpaAverage'),
+    maxScore: pick('maxScore', 'fullScore', 'maximumScore', 'highestScore', 'scoreMax', 'max'),
+    passScore: pick('passScore', 'passingScore', 'minimumPassScore', 'passLine', 'minimumPassingScore', 'minPass', 'pass'),
+    targetDirection: pick('targetDirection', 'direction', 'targetMajor', 'targetProgram', 'target') || profile.targetDirection || 'Data Science / AI'
+  };
+}
+
 export function validateProfile(profile = {}) {
+  const normalized = normalizeProfile(profile);
   const errors = [];
-  const avg = Number(profile.averageScore);
-  const max = Number(profile.maxScore);
-  const pass = Number(profile.passScore);
+  const avg = Number(normalized.averageScore);
+  const max = Number(normalized.maxScore);
+  const pass = Number(normalized.passScore);
   if (!Number.isFinite(avg)) errors.push('均分必须为有效数字');
   if (!Number.isFinite(max)) errors.push('满分必须为有效数字');
   if (!Number.isFinite(pass)) errors.push('及格线必须为有效数字');
   if (Number.isFinite(max) && Number.isFinite(pass) && max <= pass) errors.push('满分必须高于及格线');
   if (Number.isFinite(avg) && Number.isFinite(max) && avg > max) errors.push('均分不能高于满分');
   if (Number.isFinite(avg) && Number.isFinite(pass) && avg < pass) errors.push('均分不能低于及格线');
-  if (!String(profile.targetDirection || '').trim()) errors.push('目标方向不能为空');
+  if (!String(normalized.targetDirection || '').trim()) errors.push('目标方向不能为空');
   return { valid: errors.length === 0, errors };
 }
 
 export function calculateGermanGrade(profile = {}) {
-  const validation = validateProfile(profile);
-  const avg = Number(profile.averageScore);
-  const max = Number(profile.maxScore);
-  const pass = Number(profile.passScore);
+  const normalized = normalizeProfile(profile);
+  const validation = validateProfile(normalized);
+  const avg = Number(normalized.averageScore);
+  const max = Number(normalized.maxScore);
+  const pass = Number(normalized.passScore);
   if (!validation.valid) {
     return { value: null, formula: '1 + 3 × (最高分 - 申请者成绩) / (最高分 - 最低及格分)', note: validation.errors.join('；') };
   }
@@ -341,25 +354,26 @@ export function buildDrafts(profile = {}, programs = demoPrograms, matching = []
 }
 
 export function runFullDemo(profile = {}, incomingPrograms = []) {
-  const validation = validateProfile(profile);
+  const normalizedProfile = normalizeProfile(profile);
+  const validation = validateProfile(normalizedProfile);
   if (!validation.valid) {
     return { ok: false, generatedAt: now(), validation, error: validation.errors.join('；') };
   }
   const programs = incomingPrograms?.length ? incomingPrograms : demoPrograms.map(p => ({ ...p, checkedAt: now() }));
-  const grade = calculateGermanGrade(profile);
-  const matching = buildCourseMatching(profile, programs);
-  const competition = buildCompetition(profile, programs);
-  const dashboard = buildDashboard(profile, programs);
-  const policyRadar = buildPolicyRadar(profile, programs);
+  const grade = calculateGermanGrade(normalizedProfile);
+  const matching = buildCourseMatching(normalizedProfile, programs);
+  const competition = buildCompetition(normalizedProfile, programs);
+  const dashboard = buildDashboard(normalizedProfile, programs);
+  const policyRadar = buildPolicyRadar(normalizedProfile, programs);
   const efficiency = buildEfficiencyReport();
-  const drafts = buildDrafts(profile, programs, matching);
+  const drafts = buildDrafts(normalizedProfile, programs, matching);
   return {
     ok: true,
     generatedAt: now(),
     profile: {
-      ...profile,
+      ...normalizedProfile,
       germanGrade: grade.value,
-      profileCompleteness: profile.university && profile.major && profile.experiences ? '较完整' : '需补充院校/专业/经历/课程描述'
+      profileCompleteness: normalizedProfile.university && normalizedProfile.major && normalizedProfile.experiences ? '较完整' : '需补充院校/专业/经历/课程描述'
     },
     grade,
     programs,

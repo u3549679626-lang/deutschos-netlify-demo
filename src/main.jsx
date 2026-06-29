@@ -734,6 +734,36 @@ function ExpertCenterMapping({ compact = false }) {
   </section>;
 }
 
+function PrivacyCommercialBlock({ result = {} }) {
+  const privacy = result.privacyAndCompliance || {};
+  const commercialization = result.commercialization || {};
+  const principles = privacy.principles || [
+    '最小化采集申请材料',
+    '学生、顾问、管理员角色隔离',
+    '敏感字段脱敏展示',
+    '官网关键要求必须人工复核'
+  ];
+  const studentPackage = commercialization.studentPackage || ['申请诊断报告', '项目匹配建议', '课程缺口清单'];
+  const consultantWorkspace = commercialization.consultantWorkspace || ['多学生管理', '项目库核验', '任务看板'];
+
+  return <section className="panel privacy-commercial-block" data-nav="commercial">
+    <div className="section-title">
+      <div>
+        <span className="eyebrow">隐私合规 × 商业化边界</span>
+        <h2>可演示，但不越界承诺</h2>
+        <p className="muted">把 Demo 中涉及申请材料、顾问复核和商业包装的边界明确展示，便于后续进入真实产品化阶段。</p>
+      </div>
+      <Status value="Demo Guardrail" />
+    </div>
+    <div className="three-col">
+      <article className="mini-card"><span>合规原则</span><ul className="clean-list">{principles.map(item => <li key={item}>{item}</li>)}</ul></article>
+      <article className="mini-card"><span>学生诊断包</span><ul className="clean-list">{studentPackage.map(item => <li key={item}>{item}</li>)}</ul></article>
+      <article className="mini-card"><span>顾问工作台</span><ul className="clean-list">{consultantWorkspace.map(item => <li key={item}>{item}</li>)}</ul></article>
+    </div>
+    <p className="guardrail">{privacy.demoBoundary || commercialization.value || '当前为 Demo 原型：真实商用前需补充隐私政策、审计日志、数据删除/导出机制与人工复核责任边界。'}</p>
+  </section>;
+}
+
 function VerificationTable({ programs = [] }) {
   if (!programs.length) return null;
   return <section className="panel"><div className="section-title"><div><h2>官网核验表 v0.4</h2><p className="muted">保留来源入口、抓取日期、核验状态和待人工复核标签；未确认信息不推断。</p></div></div><div className="responsive-table"><table><thead><tr><th>学校 / 项目</th><th>路径</th><th>APS / VPD</th><th>Deadline / NC</th><th>来源与状态</th></tr></thead><tbody>{programs.map(p => <tr key={p.id}><td><b>{p.university}</b><small>{p.programName} · {p.universityType}</small></td><td>{p.applicationPlatform}<small>{p.teachingLanguage} · {p.degreeType}</small></td><td>{p.apsRequired}<small>{p.vpdRequired}</small></td><td>{p.deadline}<small>{p.ncStatus}</small></td><td><a href={p.sourceUrl} target="_blank">官方入口</a><div className="tags"><Status value={p.verification?.status || '待人工复核'} /><Status value={p.confidence || 'medium'} /></div><small>{p.checkedAt?.slice(0, 10)}</small></td></tr>)}</tbody></table></div></section>;
