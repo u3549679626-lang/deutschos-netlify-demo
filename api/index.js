@@ -87,39 +87,56 @@ function buildAiHealth() {
   return {
     ok: true,
     service: 'deutschos-ai-proxy',
-    configured: config.configured,
-    provider: config.provider,
-    model: config.model,
+    mode: 'hybrid-local-first',
+    localExpertEngine: {
+      available: true,
+      mode: 'local-expert-engine',
+      description: 'Server-side deterministic German master application advisor; no external token required.'
+    },
+    externalLlm: {
+      configured: config.configured,
+      provider: config.provider,
+      model: config.model,
+      baseUrlHost: config.configured ? safeUrlHost(config.baseUrl) : null,
+      candidateBaseUrlHosts: config.configured ? config.candidateBaseUrls.map(safeUrlHost).filter(Boolean) : [],
+      candidateModels: config.configured ? config.candidateModels : [],
+      requiredEnv: getRequiredEnv(config.provider),
+      optionalDiagnosticEnv: config.provider === 'sensenova' ? ['SENSENOVA_CANDIDATE_BASE_URLS', 'SENSENOVA_CANDIDATE_MODELS'] : []
+    },
+    configured: true,
+    provider: config.configured ? config.provider : 'local-expert-engine',
+    model: config.configured ? config.model : 'deterministic-advisor-v1',
     baseUrlHost: config.configured ? safeUrlHost(config.baseUrl) : null,
-    candidateBaseUrlHosts: config.configured ? config.candidateBaseUrls.map(safeUrlHost).filter(Boolean) : [],
-    candidateModels: config.configured ? config.candidateModels : [],
-    requiredEnv: getRequiredEnv(config.provider),
-    optionalDiagnosticEnv: config.provider === 'sensenova' ? ['SENSENOVA_CANDIDATE_BASE_URLS', 'SENSENOVA_CANDIDATE_MODELS'] : [],
-    security: 'Model API keys are read only from server-side environment variables and are never exposed to browser bundles.'
+    security: 'Model API keys are read only from server-side environment variables and are never exposed to browser bundles. Local expert mode does not require external API keys.'
   };
 }
 
-function buildFallbackAdvice(demo, mode = 'fallback-no-secret', warning) {
+function buildFallbackAdvice(demo, mode = 'local-expert-engine', warning) {
   const top = demo.matching?.[0] || {};
+  const gradeValue = demo.grade?.value ?? '待计算';
+  const highRiskCount = demo.riskWarnings?.length || demo.matching?.filter((item) => ['高', '极高'].includes(item.riskLevel)).length || 0;
   return {
     ok: true,
     mode,
-    provider: 'local-rule-engine',
-    warning: warning || '未检测到服务端 LLM API Key，当前返回本地规则兜底建议；公开仓库不会包含真实 API Key。',
+    provider: 'local-expert-engine',
+    model: 'deterministic-advisor-v1',
+    warning: warning || '当前使用服务端本地专家引擎生成建议；外部大模型可作为增强项接入，但不是 Demo 运行的硬依赖。',
     advice: [
-      `当前德国制参考成绩为 ${demo.grade?.value}，可用于初筛排序，但正式成绩认定以学校或 uni-assist 为准。`,
-      '优先处理 APS、deadline、申请路径、语言要求和课程/ECTS 五类高风险字段。',
+      `当前德国制参考成绩为 ${gradeValue}，可用于初筛排序，但正式成绩认定以学校或 uni-assist 为准。`,
+      `本次建议优先围绕 APS、deadline、申请路径、语言要求和课程/ECTS 五类风险展开，已识别 ${highRiskCount} 个需重点复核的高风险信号。`,
       `当前最高匹配项目为 ${top.university || '待生成'} - ${top.programName || '待生成'}，匹配分用于风险排序，不代表录取概率。`,
-      '专家团输出为顾问审核前初筛材料，正式交付前必须完成官网与材料复核。'
+      '建议采用“官网核验表 + 课程匹配说明 + 文书证据链”的交付组合，先把不确定项标为待人工复核，再进入正式申请动作。'
     ],
     nextActions: [
       '整理成绩单和英文课程描述，补齐数学/统计/计算机相关课程证据。',
       '逐项目打开官网 admission、deadline、language requirements 页面并截图。',
+      '优先处理 APS / VPD / uni-assist / 直申路径等硬性阻塞项。',
       '将报告中的风险证据转化为课程匹配说明和 Motivation Letter 素材。'
     ],
     riskWarnings: [
-      '未配置服务端 AI Key 时使用本地兜底规则。',
-      'Vercel 环境变量不得写入前端或公开仓库。'
+      '本地专家引擎输出为规则化初筛建议，不替代学校或 uni-assist 的正式审核。',
+      '官网未明确公布的 NC、历史线、课程学分要求必须标注“待人工核实”。',
+      '外部 LLM 授权失败不影响 Demo 主流程；如需真实模型增强，需提供有效的服务端 API Key。'
     ]
   };
 }
@@ -183,7 +200,7 @@ async function requestAiAdvice(config, prompt) {
 async function buildAiAdvice(profile = {}, programs = []) {
   const demo = runFullDemo(profile, programs);
   const config = getLlmConfig();
-  if (!config.configured) return buildFallbackAdvice(demo);
+  if (!config.configured) return buildFallbackAdvice(demo, 'local-expert-engine', '当前使用服务端本地专家引擎生成建议；未配置外部 LLM Key，不影响 Demo 主流程。');
 
   const safePayload = {
     profile: demo.profile,
@@ -205,7 +222,7 @@ async function buildAiAdvice(profile = {}, programs = []) {
     const attempts = aiResult.attempts || [];
     const first = attempts[0];
     const summary = first ? `首个错误：${first.status} ${first.statusText}，host=${first.baseUrlHost}，model=${first.model}。` : '没有拿到上游响应。';
-    return { ...buildFallbackAdvice(demo, 'fallback-api-error', `AI 服务调用失败，已返回本地兜底建议。${summary}`), diagnostics: { provider: config.provider, attempts } };
+    return { ...buildFallbackAdvice(demo, 'local-expert-engine', `外部 LLM 增强暂未接通，已自动切换为服务端本地专家引擎。${summary}`), externalLlm: { ok: false, provider: config.provider, attempts } };
   }
 
   const content = aiResult.data?.choices?.[0]?.message?.content || '';
