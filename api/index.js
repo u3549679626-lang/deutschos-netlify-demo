@@ -3,13 +3,49 @@ import { handlePortalRequest } from '../server/portal-store.mjs';
 import { handleAuthRequest } from '../server/auth-store.mjs';
 import { handleScheduledTaskRequest } from '../server/scheduled-tasks-store.mjs';
 
-function buildFallbackAdvice(demo) {
+function getLlmConfig() {
+  const provider = (process.env.LLM_PROVIDER || (process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.OPENAI_API_KEY ? 'openai' : 'none')).toLowerCase();
+  if (provider === 'openai') {
+    return {
+      configured: Boolean(process.env.OPENAI_API_KEY),
+      provider: 'openai',
+      apiKey: process.env.OPENAI_API_KEY,
+      baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini'
+    };
+  }
+  return {
+    configured: Boolean(process.env.DEEPSEEK_API_KEY),
+    provider: 'deepseek',
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    baseUrl: (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, ''),
+    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat'
+  };
+}
+
+function buildAiHealth() {
+  const config = getLlmConfig();
+  return {
+    ok: true,
+    service: 'deutschos-ai-proxy',
+    configured: config.configured,
+    provider: config.provider,
+    model: config.model,
+    baseUrlHost: config.configured ? new URL(config.baseUrl).host : null,
+    requiredEnv: config.provider === 'openai'
+      ? ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL']
+      : ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL'],
+    security: 'Model API keys are read only from server-side environment variables and are never exposed to browser bundles.'
+  };
+}
+
+function buildFallbackAdvice(demo, mode = 'fallback-no-secret', warning) {
   const top = demo.matching?.[0] || {};
   return {
     ok: true,
-    mode: 'fallback-no-secret',
+    mode,
     provider: 'local-rule-engine',
-    warning: '未检测到服务端环境变量 DEEPSEEK_API_KEY，当前返回本地规则兜底建议；公开仓库不会包含真实 API Key。',
+    warning: warning || '未检测到服务端 LLM API Key，当前返回本地规则兜底建议；公开仓库不会包含真实 API Key。',
     advice: [
       `当前德国制参考成绩为 ${demo.grade?.value}，可用于初筛排序，但正式成绩认定以学校或 uni-assist 为准。`,
       '优先处理 APS、deadline、申请路径、语言要求和课程/ECTS 五类高风险字段。',
@@ -38,8 +74,8 @@ async function readBody(req) {
 
 async function buildAiAdvice(profile = {}, programs = []) {
   const demo = runFullDemo(profile, programs);
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return buildFallbackAdvice(demo);
+  const config = getLlmConfig();
+  if (!config.configured) return buildFallbackAdvice(demo);
 
   const safePayload = {
     profile: demo.profile,
@@ -56,11 +92,11 @@ async function buildAiAdvice(profile = {}, programs = []) {
 
   const prompt = `你是德国硕士申请专家团的风控型顾问。请基于以下 JSON 生成中文建议，必须遵守：1) 不承诺录取概率；2) 明确区分真实计算、演示数据、待人工复核；3) 项目数量只能表述为 TUM/Saarland University/TH Köln 三个示范院校 + 引擎可扩展；4) 专家团输出是顾问审核前初筛。输出 JSON，字段为 advice 数组、nextActions 数组、riskWarnings 数组。\n\n${JSON.stringify(safePayload)}`;
 
-  const res = await fetch('https://api.deepseek.com/chat/completions', {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
     body: JSON.stringify({
-      model: process.env.DEEPSEEK_MODEL || 'deepseek-chat',
+      model: config.model,
       temperature: 0.2,
       messages: [
         { role: 'system', content: '你是严谨、诚实、合规的德国硕士申请初筛产品顾问。只输出可核验、不过度承诺的建议。' },
@@ -69,16 +105,16 @@ async function buildAiAdvice(profile = {}, programs = []) {
     })
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    return { ...buildFallbackAdvice(demo), mode: 'fallback-api-error', warning: `AI 服务调用失败，已返回本地兜底建议。状态码：${res.status}。错误摘要：${text.slice(0, 160)}` };
+  if (!response.ok) {
+    const text = await response.text();
+    return buildFallbackAdvice(demo, 'fallback-api-error', `AI 服务调用失败，已返回本地兜底建议。状态码：${response.status}。错误摘要：${text.slice(0, 160)}`);
   }
-  const data = await res.json();
+  const data = await response.json();
   const content = data.choices?.[0]?.message?.content || '';
   let parsed;
   try { parsed = JSON.parse(content.replace(/^```json\s*/i, '').replace(/```$/,'').trim()); }
   catch { parsed = { advice: [content], nextActions: [], riskWarnings: ['AI 返回非 JSON 格式，已按原文展示。'] }; }
-  return { ok: true, mode: 'ai-env-proxy', provider: 'deepseek-compatible-server-proxy', warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
+  return { ok: true, mode: 'ai-env-proxy', provider: `${config.provider}-server-proxy`, model: config.model, warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
 }
 
 export default async function handler(req, res) {
@@ -101,7 +137,8 @@ export default async function handler(req, res) {
         apiVersion: 'auth-rbac-2026-06-19',
         commitHint: 'catch-all-version-probe',
         authRoutes: ['/api/auth/status', '/api/auth/login', '/api/auth/logout'],
-        portalRoutes: ['/api/portal/status', '/api/portal/read', '/api/portal/publish']
+        portalRoutes: ['/api/portal/status', '/api/portal/read', '/api/portal/publish'],
+        aiRoutes: ['/api/ai/health', '/api/ai/advice']
       });
     }
     if (path.startsWith('/portal/')) {
@@ -118,6 +155,7 @@ export default async function handler(req, res) {
     if (path === '/demo/run') return res.status(200).json(runFullDemo(body.profile || {}, body.programs || []));
     if (path === '/policy-radar/run') return res.status(200).json(buildPolicyRadar(body.profile || {}, body.programs || []));
     if (path === '/efficiency-report') return res.status(200).json(buildEfficiencyReport());
+    if (path === '/ai/health') return res.status(200).json(buildAiHealth());
     if (path === '/ai/advice') return res.status(200).json(await buildAiAdvice(body.profile || {}, body.programs || []));
     if (path === '/export/package') {
       const demo = body.demo || runFullDemo(body.profile || {}, body.programs || []);

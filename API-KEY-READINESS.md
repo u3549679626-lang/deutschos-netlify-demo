@@ -10,6 +10,7 @@
 
 - 前端门户使用静态/确定性 Demo 数据展示申请者、顾问、管理员三端；
 - 服务端 `/api/demo/run`、`/api/analysis/run` 通过 `server/demo-core.mjs` 生成确定性分析结果；
+- 服务端 `/api/ai/health` 可检查 LLM Provider 是否已配置，`/api/ai/advice` 可通过服务端代理调用 DeepSeek/OpenAI-compatible Chat Completions；
 - Supabase Auth 若未创建演示账号，会返回 401，但前端有 fallback 演示模式。
 
 ## 2. 已在代码中实际使用的密钥/环境变量
@@ -28,12 +29,13 @@
 
 | 推荐优先级 | 用途 | 变量名 | 可见范围 | 说明 |
 |---:|---|---|---|---|
+| 1 | LLM Provider 选择 | `LLM_PROVIDER` | 服务端 | 可填 `deepseek` 或 `openai`；不填时按已有 Key 自动判断 |
 | 1 | DeepSeek 文书/问答/课程解释 | `DEEPSEEK_API_KEY` | 服务端 | 推荐作为第一阶段成本可控模型 |
 | 1 | DeepSeek API 地址 | `DEEPSEEK_BASE_URL` | 服务端 | 默认 `https://api.deepseek.com` |
 | 1 | DeepSeek 模型名 | `DEEPSEEK_MODEL` | 服务端 | 默认 `deepseek-chat` |
 | 2 | OpenAI-compatible 备用 | `OPENAI_API_KEY` | 服务端 | 可作为备用或迁移接口 |
 | 2 | OpenAI-compatible 地址 | `OPENAI_BASE_URL` | 服务端 | 默认 `https://api.openai.com/v1` |
-| 2 | OpenAI-compatible 模型 | `OPENAI_MODEL` | 服务端 | 视供应商而定 |
+| 2 | OpenAI-compatible 模型 | `OPENAI_MODEL` | 服务端 | 默认 `gpt-4o-mini`；视供应商而定 |
 
 ## 4. 未来模块可能需要的 Key
 
@@ -54,7 +56,7 @@
 ## 6. 推荐接入顺序
 
 1. 先按 `SUPABASE-AUTH-RBAC-SETUP.md` 补 Supabase 演示账号、RBAC 表和 Vercel 环境变量，消除 Auth 401；
-2. 接入一个服务端 LLM Provider，例如 DeepSeek；
-3. 增加 `/api/ai/*` 服务端代理接口，前端只调用本项目 API，不直接持有模型 Key；
+2. 在 Vercel 服务端环境变量中配置一个 LLM Provider，例如 DeepSeek；
+3. 通过 `/api/ai/health` 验证 Key 是否已生效，再用 `/api/ai/advice` 做模型调用 smoke test；
 4. 为政策雷达和官网核验再接搜索/抓取 Key；
 5. 最后接通知类 Key，例如 Lark/SMTP。
