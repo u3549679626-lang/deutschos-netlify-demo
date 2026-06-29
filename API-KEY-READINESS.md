@@ -53,7 +53,7 @@
 
 ## 6. 推荐接入顺序
 
-1. 先补 Supabase 演示账号，消除 Auth 401；
+1. 先按 `SUPABASE-AUTH-RBAC-SETUP.md` 补 Supabase 演示账号、RBAC 表和 Vercel 环境变量，消除 Auth 401；
 2. 接入一个服务端 LLM Provider，例如 DeepSeek；
 3. 增加 `/api/ai/*` 服务端代理接口，前端只调用本项目 API，不直接持有模型 Key；
 4. 为政策雷达和官网核验再接搜索/抓取 Key；

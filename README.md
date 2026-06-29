@@ -129,6 +129,7 @@ deutschos-mvp/
 
 ```text
 API-KEY-READINESS.md
+SUPABASE-AUTH-RBAC-SETUP.md
 .env.example
 ```
 
