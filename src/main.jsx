@@ -958,7 +958,7 @@ function ApplicantIntakeModal({ profile, setProfile, onClose, onRunDemo }) {
       <div className="upload-zone"><div><h3>申请材料上传入口</h3><p>本 Demo 先保存文件名、类型、大小等元数据；正式版可接入成绩单/PDF/Excel 解析和安全存储。</p></div><div className="upload-grid">{fileBuckets.map(bucket => <label className="upload-card" key={bucket}><b>{bucket}</b><small>选择文件</small><input type="file" multiple onChange={e => addFiles(bucket, e.target.files)} /></label>)}</div></div>
       {(profile.uploadedFiles || []).length > 0 && <div className="file-list"><h3>已选择材料</h3>{profile.uploadedFiles.map(file => <div className="file-row" key={file.id}><span><b>{file.bucket}</b> · {file.name}</span><small>{Math.ceil(file.size / 1024)} KB · {file.type}</small><button onClick={() => removeFile(file.id)}>移除</button></div>)}</div>}
       {saveNotice && <div className="save-notice">{saveNotice}</div>}
-      <div className="modal-actions"><button className="secondary" onClick={onClose}>关闭</button><button className="secondary" onClick={() => saveProfile()}>保存资料</button><button className="primary" onClick={() => onRunDemo(saveProfile())}>保存并生成方案</button></div>
+      <div className="modal-actions"><button className="secondary" onClick={onClose}>关闭</button><button className="secondary" onClick={() => { saveProfile(); onClose(); }}>保存资料</button><button className="primary" onClick={() => { const saved = saveProfile(); onRunDemo(saved); onClose(); }}>保存并生成方案</button></div>
     </section>
   </div>;
 }
