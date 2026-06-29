@@ -3,33 +3,83 @@ import { handlePortalRequest } from '../server/portal-store.mjs';
 import { handleAuthRequest } from '../server/auth-store.mjs';
 import { handleScheduledTaskRequest } from '../server/scheduled-tasks-store.mjs';
 
+function parseEnvList(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function uniqueList(items) {
+  return [...new Set(items.filter(Boolean))];
+}
+
+function sanitizeBaseUrl(value) {
+  return String(value || '').replace(/\/$/, '');
+}
+
 function getLlmConfig() {
   const provider = (process.env.LLM_PROVIDER || (process.env.SENSENOVA_API_KEY ? 'sensenova' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.OPENAI_API_KEY ? 'openai' : 'none')).toLowerCase();
   if (provider === 'sensenova') {
+    const baseUrl = sanitizeBaseUrl(process.env.SENSENOVA_BASE_URL || 'https://api.sensenova.cn/compatible-mode/v1');
+    const model = process.env.SENSENOVA_MODEL || 'SenseChat';
     return {
       configured: Boolean(process.env.SENSENOVA_API_KEY),
       provider: 'sensenova',
       apiKey: process.env.SENSENOVA_API_KEY,
-      baseUrl: (process.env.SENSENOVA_BASE_URL || 'https://api.sensenova.cn/compatible-mode/v1').replace(/\/$/, ''),
-      model: process.env.SENSENOVA_MODEL || 'SenseChat'
+      baseUrl,
+      model,
+      candidateBaseUrls: uniqueList([
+        baseUrl,
+        ...parseEnvList(process.env.SENSENOVA_CANDIDATE_BASE_URLS),
+        'https://api.sensenova.cn/compatible-mode/v1',
+        'https://api.sensenova.cn/v1',
+        'https://token.sensenova.cn/v1'
+      ]).map(sanitizeBaseUrl),
+      candidateModels: uniqueList([
+        model,
+        ...parseEnvList(process.env.SENSENOVA_CANDIDATE_MODELS),
+        'SenseChat',
+        'SenseChat-5',
+        'sensenova-6.7-flash-lite'
+      ])
     };
   }
   if (provider === 'openai') {
+    const baseUrl = sanitizeBaseUrl(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1');
+    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
     return {
       configured: Boolean(process.env.OPENAI_API_KEY),
       provider: 'openai',
       apiKey: process.env.OPENAI_API_KEY,
-      baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini'
+      baseUrl,
+      model,
+      candidateBaseUrls: [baseUrl],
+      candidateModels: [model]
     };
   }
+  const baseUrl = sanitizeBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
+  const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
   return {
     configured: Boolean(process.env.DEEPSEEK_API_KEY),
     provider: 'deepseek',
     apiKey: process.env.DEEPSEEK_API_KEY,
-    baseUrl: (process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, ''),
-    model: process.env.DEEPSEEK_MODEL || 'deepseek-chat'
+    baseUrl,
+    model,
+    candidateBaseUrls: [baseUrl],
+    candidateModels: [model]
   };
+}
+
+function getRequiredEnv(provider) {
+  if (provider === 'sensenova') return ['SENSENOVA_API_KEY', 'SENSENOVA_BASE_URL', 'SENSENOVA_MODEL'];
+  if (provider === 'openai') return ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'];
+  return ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL'];
+}
+
+function safeUrlHost(baseUrl) {
+  try { return new URL(baseUrl).host; }
+  catch { return null; }
 }
 
 function buildAiHealth() {
@@ -40,10 +90,11 @@ function buildAiHealth() {
     configured: config.configured,
     provider: config.provider,
     model: config.model,
-    baseUrlHost: config.configured ? new URL(config.baseUrl).host : null,
-    requiredEnv: config.provider === 'openai'
-      ? ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL']
-      : ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL'],
+    baseUrlHost: config.configured ? safeUrlHost(config.baseUrl) : null,
+    candidateBaseUrlHosts: config.configured ? config.candidateBaseUrls.map(safeUrlHost).filter(Boolean) : [],
+    candidateModels: config.configured ? config.candidateModels : [],
+    requiredEnv: getRequiredEnv(config.provider),
+    optionalDiagnosticEnv: config.provider === 'sensenova' ? ['SENSENOVA_CANDIDATE_BASE_URLS', 'SENSENOVA_CANDIDATE_MODELS'] : [],
     security: 'Model API keys are read only from server-side environment variables and are never exposed to browser bundles.'
   };
 }
@@ -81,6 +132,54 @@ async function readBody(req) {
   return {};
 }
 
+async function callChatCompletions(config, prompt, baseUrl, model) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: '你是严谨、诚实、合规的德国硕士申请初筛产品顾问。只输出可核验、不过度承诺的建议。' },
+        { role: 'user', content: prompt }
+      ]
+    })
+  });
+
+  const text = await response.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+  return { response, text, data };
+}
+
+function summarizeAiError(result, baseUrl, model) {
+  const raw = result?.data?.error?.message || result?.data?.message || result?.text || '';
+  return {
+    baseUrlHost: safeUrlHost(baseUrl),
+    model,
+    status: result?.response?.status || 0,
+    statusText: result?.response?.statusText || 'request-failed',
+    errorPreview: String(raw).replace(/Bearer\s+[\w.\-]+/gi, 'Bearer ***').slice(0, 180)
+  };
+}
+
+async function requestAiAdvice(config, prompt) {
+  const attempts = [];
+  for (const baseUrl of config.candidateBaseUrls) {
+    for (const model of config.candidateModels) {
+      try {
+        const result = await callChatCompletions(config, prompt, baseUrl, model);
+        if (result.response.ok) return { ok: true, model, baseUrl, data: result.data };
+        attempts.push(summarizeAiError(result, baseUrl, model));
+        if (result.response.status === 401) break;
+      } catch (error) {
+        attempts.push({ baseUrlHost: safeUrlHost(baseUrl), model, status: 0, statusText: 'network-error', errorPreview: String(error.message || error).slice(0, 180) });
+      }
+    }
+  }
+  return { ok: false, attempts };
+}
+
 async function buildAiAdvice(profile = {}, programs = []) {
   const demo = runFullDemo(profile, programs);
   const config = getLlmConfig();
@@ -101,29 +200,19 @@ async function buildAiAdvice(profile = {}, programs = []) {
 
   const prompt = `你是德国硕士申请专家团的风控型顾问。请基于以下 JSON 生成中文建议，必须遵守：1) 不承诺录取概率；2) 明确区分真实计算、演示数据、待人工复核；3) 项目数量只能表述为 TUM/Saarland University/TH Köln 三个示范院校 + 引擎可扩展；4) 专家团输出是顾问审核前初筛。输出 JSON，字段为 advice 数组、nextActions 数组、riskWarnings 数组。\n\n${JSON.stringify(safePayload)}`;
 
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({
-      model: config.model,
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: '你是严谨、诚实、合规的德国硕士申请初筛产品顾问。只输出可核验、不过度承诺的建议。' },
-        { role: 'user', content: prompt }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    return buildFallbackAdvice(demo, 'fallback-api-error', `AI 服务调用失败，已返回本地兜底建议。状态码：${response.status}。错误摘要：${text.slice(0, 160)}`);
+  const aiResult = await requestAiAdvice(config, prompt);
+  if (!aiResult.ok) {
+    const attempts = aiResult.attempts || [];
+    const first = attempts[0];
+    const summary = first ? `首个错误：${first.status} ${first.statusText}，host=${first.baseUrlHost}，model=${first.model}。` : '没有拿到上游响应。';
+    return { ...buildFallbackAdvice(demo, 'fallback-api-error', `AI 服务调用失败，已返回本地兜底建议。${summary}`), diagnostics: { provider: config.provider, attempts } };
   }
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+
+  const content = aiResult.data?.choices?.[0]?.message?.content || '';
   let parsed;
   try { parsed = JSON.parse(content.replace(/^```json\s*/i, '').replace(/```$/,'').trim()); }
   catch { parsed = { advice: [content], nextActions: [], riskWarnings: ['AI 返回非 JSON 格式，已按原文展示。'] }; }
-  return { ok: true, mode: 'ai-env-proxy', provider: `${config.provider}-server-proxy`, model: config.model, warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
+  return { ok: true, mode: 'ai-env-proxy', provider: `${config.provider}-server-proxy`, model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
 }
 
 export default async function handler(req, res) {
