@@ -121,3 +121,21 @@ deutschos-mvp/
 3. `germany-master-application-os-competition-deck.pptx`：路演展示 PPT。
 
 如果平台要求公网 Web 链接，需要将本项目部署到 Vercel / Netlify / Railway / Render / 自有服务器。当前交付为本地可运行产品包。
+
+
+## API Key 接入准备
+
+当前仓库不提交任何真实密钥。下一步接入 Supabase / DeepSeek / 搜索爬虫 / 通知等服务前，请先查看：
+
+```text
+API-KEY-READINESS.md
+.env.example
+```
+
+推荐在 Vercel 中配置路径：
+
+```text
+Project Settings → Environment Variables
+```
+
+注意：`SUPABASE_SERVICE_ROLE_KEY`、`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、通知密钥等只能放在服务端环境变量，禁止写入前端代码或提交到 GitHub。
