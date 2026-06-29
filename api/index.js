@@ -4,7 +4,16 @@ import { handleAuthRequest } from '../server/auth-store.mjs';
 import { handleScheduledTaskRequest } from '../server/scheduled-tasks-store.mjs';
 
 function getLlmConfig() {
-  const provider = (process.env.LLM_PROVIDER || (process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.OPENAI_API_KEY ? 'openai' : 'none')).toLowerCase();
+  const provider = (process.env.LLM_PROVIDER || (process.env.SENSENOVA_API_KEY ? 'sensenova' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.OPENAI_API_KEY ? 'openai' : 'none')).toLowerCase();
+  if (provider === 'sensenova') {
+    return {
+      configured: Boolean(process.env.SENSENOVA_API_KEY),
+      provider: 'sensenova',
+      apiKey: process.env.SENSENOVA_API_KEY,
+      baseUrl: (process.env.SENSENOVA_BASE_URL || 'https://api.sensenova.cn/compatible-mode/v1').replace(/\/$/, ''),
+      model: process.env.SENSENOVA_MODEL || 'SenseChat'
+    };
+  }
   if (provider === 'openai') {
     return {
       configured: Boolean(process.env.OPENAI_API_KEY),

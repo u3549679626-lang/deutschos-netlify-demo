@@ -29,13 +29,16 @@
 
 | 推荐优先级 | 用途 | 变量名 | 可见范围 | 说明 |
 |---:|---|---|---|---|
-| 1 | LLM Provider 选择 | `LLM_PROVIDER` | 服务端 | 可填 `deepseek` 或 `openai`；不填时按已有 Key 自动判断 |
-| 1 | DeepSeek 文书/问答/课程解释 | `DEEPSEEK_API_KEY` | 服务端 | 推荐作为第一阶段成本可控模型 |
-| 1 | DeepSeek API 地址 | `DEEPSEEK_BASE_URL` | 服务端 | 默认 `https://api.deepseek.com` |
-| 1 | DeepSeek 模型名 | `DEEPSEEK_MODEL` | 服务端 | 默认 `deepseek-chat` |
-| 2 | OpenAI-compatible 备用 | `OPENAI_API_KEY` | 服务端 | 可作为备用或迁移接口 |
-| 2 | OpenAI-compatible 地址 | `OPENAI_BASE_URL` | 服务端 | 默认 `https://api.openai.com/v1` |
-| 2 | OpenAI-compatible 模型 | `OPENAI_MODEL` | 服务端 | 默认 `gpt-4o-mini`；视供应商而定 |
+| 1 | LLM Provider 选择 | `LLM_PROVIDER` | 服务端 | 可填 `sensenova`、`deepseek` 或 `openai`；不填时按已有 Key 自动判断 |
+| 1 | SenseNova / 小浣熊兼容 Token | `SENSENOVA_API_KEY` | 服务端 | 用于商汤 SenseNova/OpenAI 兼容接口；旧 Token 可先放这里验证，但建议后续轮换 |
+| 1 | SenseNova 兼容 API 地址 | `SENSENOVA_BASE_URL` | 服务端 | 默认 `https://api.sensenova.cn/compatible-mode/v1`；如后台文档显示 Token Plan 地址则以后台为准 |
+| 1 | SenseNova 模型名 | `SENSENOVA_MODEL` | 服务端 | 默认 `SenseChat`；如控制台显示 `sensenova-6.7-flash-lite` 等可替换 |
+| 2 | DeepSeek 文书/问答/课程解释 | `DEEPSEEK_API_KEY` | 服务端 | 可作为备用模型 |
+| 2 | DeepSeek API 地址 | `DEEPSEEK_BASE_URL` | 服务端 | 默认 `https://api.deepseek.com` |
+| 2 | DeepSeek 模型名 | `DEEPSEEK_MODEL` | 服务端 | 默认 `deepseek-chat` |
+| 3 | OpenAI-compatible 备用 | `OPENAI_API_KEY` | 服务端 | 可作为其他兼容供应商迁移接口 |
+| 3 | OpenAI-compatible 地址 | `OPENAI_BASE_URL` | 服务端 | 默认 `https://api.openai.com/v1` |
+| 3 | OpenAI-compatible 模型 | `OPENAI_MODEL` | 服务端 | 默认 `gpt-4o-mini`；视供应商而定 |
 
 ## 4. 未来模块可能需要的 Key
 
@@ -56,7 +59,26 @@
 ## 6. 推荐接入顺序
 
 1. 先按 `SUPABASE-AUTH-RBAC-SETUP.md` 补 Supabase 演示账号、RBAC 表和 Vercel 环境变量，消除 Auth 401；
-2. 在 Vercel 服务端环境变量中配置一个 LLM Provider，例如 DeepSeek；
+2. 在 Vercel 服务端环境变量中配置 SenseNova / 小浣熊兼容 Token：`LLM_PROVIDER=sensenova`、`SENSENOVA_API_KEY`、`SENSENOVA_BASE_URL`、`SENSENOVA_MODEL`；
 3. 通过 `/api/ai/health` 验证 Key 是否已生效，再用 `/api/ai/advice` 做模型调用 smoke test；
-4. 为政策雷达和官网核验再接搜索/抓取 Key；
-5. 最后接通知类 Key，例如 Lark/SMTP。
+4. 如果旧 Token 返回 401/403/模型不存在，优先到商汤平台确认 Token 类型、Base URL、模型权限，或轮换新 Token；
+5. 为政策雷达和官网核验再接搜索/抓取 Key；
+6. 最后接通知类 Key，例如 Lark/SMTP。
+
+## 7. Vercel 中接入 SenseNova / 小浣熊 Token
+
+在 `Vercel Project → Settings → Environment Variables` 中增加以下服务端变量，不要使用 `VITE_` 前缀：
+
+```env
+LLM_PROVIDER=sensenova
+SENSENOVA_API_KEY=<粘贴旧 Token 或后续轮换的新 Token>
+SENSENOVA_BASE_URL=https://api.sensenova.cn/compatible-mode/v1
+SENSENOVA_MODEL=SenseChat
+```
+
+保存后重新部署，验收：
+
+- `/api/ai/health` 应显示 `configured: true`、`provider: sensenova`；
+- `/api/ai/advice` 应返回 `mode: ai-env-proxy`；
+- 如果仍返回 `fallback-no-secret`，说明环境变量没有进入当前 Production 部署；
+- 如果返回上游 401/403，说明 Token 类型、权限或 Base URL 需要到商汤平台后台复核。
