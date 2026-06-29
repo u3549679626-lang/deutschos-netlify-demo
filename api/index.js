@@ -42,6 +42,14 @@ function getLlmConfig() {
         'SenseChat',
         'SenseChat-5',
         'sensenova-6.7-flash-lite'
+      ]),
+      candidateAuthSchemes: uniqueList([
+        ...parseEnvList(process.env.SENSENOVA_AUTH_SCHEMES),
+        'bearer',
+        'authorization-raw',
+        'x-api-key',
+        'api-key',
+        'x-sensenova-api-key'
       ])
     };
   }
@@ -55,7 +63,8 @@ function getLlmConfig() {
       baseUrl,
       model,
       candidateBaseUrls: [baseUrl],
-      candidateModels: [model]
+      candidateModels: [model],
+      candidateAuthSchemes: ['bearer']
     };
   }
   const baseUrl = sanitizeBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
@@ -67,7 +76,8 @@ function getLlmConfig() {
     baseUrl,
     model,
     candidateBaseUrls: [baseUrl],
-    candidateModels: [model]
+    candidateModels: [model],
+    candidateAuthSchemes: ['bearer']
   };
 }
 
@@ -100,8 +110,9 @@ function buildAiHealth() {
       baseUrlHost: config.configured ? safeUrlHost(config.baseUrl) : null,
       candidateBaseUrlHosts: config.configured ? config.candidateBaseUrls.map(safeUrlHost).filter(Boolean) : [],
       candidateModels: config.configured ? config.candidateModels : [],
+      candidateAuthSchemes: config.configured ? config.candidateAuthSchemes : [],
       requiredEnv: getRequiredEnv(config.provider),
-      optionalDiagnosticEnv: config.provider === 'sensenova' ? ['SENSENOVA_CANDIDATE_BASE_URLS', 'SENSENOVA_CANDIDATE_MODELS'] : []
+      optionalDiagnosticEnv: config.provider === 'sensenova' ? ['SENSENOVA_CANDIDATE_BASE_URLS', 'SENSENOVA_CANDIDATE_MODELS', 'SENSENOVA_AUTH_SCHEMES'] : []
     },
     configured: true,
     provider: config.configured ? config.provider : 'local-expert-engine',
@@ -149,10 +160,20 @@ async function readBody(req) {
   return {};
 }
 
-async function callChatCompletions(config, prompt, baseUrl, model) {
+function buildAuthHeaders(apiKey, scheme = 'bearer') {
+  const headers = { 'Content-Type': 'application/json' };
+  if (scheme === 'authorization-raw') headers.Authorization = apiKey;
+  else if (scheme === 'x-api-key') headers['X-API-Key'] = apiKey;
+  else if (scheme === 'api-key') headers['api-key'] = apiKey;
+  else if (scheme === 'x-sensenova-api-key') headers['x-sensenova-api-key'] = apiKey;
+  else headers.Authorization = `Bearer ${apiKey}`;
+  return headers;
+}
+
+async function callChatCompletions(config, prompt, baseUrl, model, authScheme) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+    headers: buildAuthHeaders(config.apiKey, authScheme),
     body: JSON.stringify({
       model,
       temperature: 0.2,
@@ -169,11 +190,12 @@ async function callChatCompletions(config, prompt, baseUrl, model) {
   return { response, text, data };
 }
 
-function summarizeAiError(result, baseUrl, model) {
+function summarizeAiError(result, baseUrl, model, authScheme) {
   const raw = result?.data?.error?.message || result?.data?.message || result?.text || '';
   return {
     baseUrlHost: safeUrlHost(baseUrl),
     model,
+    authScheme,
     status: result?.response?.status || 0,
     statusText: result?.response?.statusText || 'request-failed',
     errorPreview: String(raw).replace(/Bearer\s+[\w.\-]+/gi, 'Bearer ***').slice(0, 180)
@@ -182,15 +204,18 @@ function summarizeAiError(result, baseUrl, model) {
 
 async function requestAiAdvice(config, prompt) {
   const attempts = [];
+  const maxAttempts = Number(process.env.LLM_MAX_DIAGNOSTIC_ATTEMPTS || 24);
   for (const baseUrl of config.candidateBaseUrls) {
     for (const model of config.candidateModels) {
-      try {
-        const result = await callChatCompletions(config, prompt, baseUrl, model);
-        if (result.response.ok) return { ok: true, model, baseUrl, data: result.data };
-        attempts.push(summarizeAiError(result, baseUrl, model));
-        if (result.response.status === 401) break;
-      } catch (error) {
-        attempts.push({ baseUrlHost: safeUrlHost(baseUrl), model, status: 0, statusText: 'network-error', errorPreview: String(error.message || error).slice(0, 180) });
+      for (const authScheme of config.candidateAuthSchemes) {
+        if (attempts.length >= maxAttempts) return { ok: false, attempts, truncated: true };
+        try {
+          const result = await callChatCompletions(config, prompt, baseUrl, model, authScheme);
+          if (result.response.ok) return { ok: true, model, baseUrl, authScheme, data: result.data };
+          attempts.push(summarizeAiError(result, baseUrl, model, authScheme));
+        } catch (error) {
+          attempts.push({ baseUrlHost: safeUrlHost(baseUrl), model, authScheme, status: 0, statusText: 'network-error', errorPreview: String(error.message || error).slice(0, 180) });
+        }
       }
     }
   }
@@ -229,7 +254,7 @@ async function buildAiAdvice(profile = {}, programs = []) {
   let parsed;
   try { parsed = JSON.parse(content.replace(/^```json\s*/i, '').replace(/```$/,'').trim()); }
   catch { parsed = { advice: [content], nextActions: [], riskWarnings: ['AI 返回非 JSON 格式，已按原文展示。'] }; }
-  return { ok: true, mode: 'ai-env-proxy', provider: `${config.provider}-server-proxy`, model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
+  return { ok: true, mode: 'ai-env-proxy', provider: `${config.provider}-server-proxy`, model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), authScheme: aiResult.authScheme, warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
 }
 
 export default async function handler(req, res) {
