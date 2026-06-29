@@ -252,13 +252,21 @@ function normalizeCourseEngine(engine = {}) {
 
 function normalizeRunResult(result = {}) {
   const engine = normalizeCourseEngine(result.courseMatchingEngine || {});
-  return { ...result, courseMatchingEngine: engine };
+  const matching = result.matching || result.courseMatching || [];
+  return { ...result, matching, courseMatching: result.courseMatching || matching, courseMatchingEngine: engine };
+}
+
+function estimateGermanGrade(profile = {}) {
+  const average = Number(profile.averageScore);
+  const max = Number(profile.maxScore);
+  const pass = Number(profile.passScore);
+  const grade = 1 + 3 * (max - average) / (max - pass);
+  return Number.isFinite(grade) ? grade.toFixed(2) : '待计算';
 }
 
 function buildLocalDemoResult(profile = createInitialProfile()) {
   const p = normalizeIntakeProfile(profile);
-  const grade = 1 + 3 * (p.maxScore - p.averageScore) / (p.maxScore - p.passScore);
-  const gradeText = Number.isFinite(grade) ? grade.toFixed(2) : '待计算';
+  const gradeText = estimateGermanGrade(p);
   const moduleSummary = [
     { module: 'math', label: '数学基础', requiredCredits: 12, matchedCredits: 10, credits: 10, courseCount: 2, status: '部分满足', confidence: 0.78, averageConfidence: 0.78, courses: ['高等数学', '线性代数'], gap: '建议补充概率论/离散数学课程描述' },
     { module: 'statistics', label: '统计与概率', requiredCredits: 10, matchedCredits: 7, credits: 7, courseCount: 2, status: '部分满足', confidence: 0.74, averageConfidence: 0.74, courses: ['概率论与数理统计', '统计学'], gap: '需证明统计建模和推断训练' },
@@ -960,10 +968,29 @@ function ApplicantIntakeSummary({ profile }) {
 }
 
 function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakeProfile, setIntakeProfile, questions, setQuestions }) {
-  const applicant = portalData.applicant;
+  const publishedApplicant = portalData.applicant;
+  const generatedApplicant = runResult?.applicant || normalizeIntakeProfile(intakeProfile);
+  const applicant = { ...publishedApplicant, ...generatedApplicant };
+  const currentGermanGrade = runResult?.grade?.value || estimateGermanGrade(applicant);
+  const hasUserInput = Boolean(intakeProfile?.name || intakeProfile?.averageScore || intakeProfile?.targetDirection);
   const portalMaterials = portalData.materials || materials;
-  const portalPrograms = portalData.programs || approvedPrograms;
-  const portalTasks = portalData.tasks || weeklyTasks;
+  const matchingRows = runResult?.matching || runResult?.courseMatching || [];
+  const generatedPrograms = (runResult?.programs || []).map((p, index) => {
+    const match = matchingRows[index] || {};
+    const gaps = match.gapModules || match.gaps || [];
+    return {
+      ...p,
+      program: p.program || p.programName,
+      tier: match.tier || p.tier || '本次初筛',
+      status: match.matchScore ? `匹配分：${match.matchScore}/100` : (p.status || '本次生成'),
+      deadline: p.deadline || '待官网最终复核',
+      path: p.applicationPath || p.path || '待官网/申请平台复核',
+      risk: match.riskLevel || match.risk || p.risk || '待复核',
+      consultantNote: gaps.length ? `本次根据录入资料识别缺口：${gaps.join('；')}` : (match.recommendation || p.consultantNote || '根据当前录入资料生成，需顾问复核。')
+    };
+  });
+  const portalPrograms = generatedPrograms.length ? generatedPrograms : (portalData.programs || approvedPrograms);
+  const portalTasks = runResult?.dashboard || runResult?.tasks || portalData.tasks || weeklyTasks;
   const portalReport = portalData.weeklyReport || weeklyReport;
   const portalOutputs = portalData.expertOutputs || expertOutputs;
   const visibleOutputs = portalOutputs.filter(x => x.visible);
@@ -976,27 +1003,28 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
     <CourseMatchingMatrix rows={runResult?.courseMatching || []} engine={runResult?.courseMatchingEngine} onRunDemo={() => onRunDemo(saveIntakeProfile(intakeProfile))} highlight />
     <StudentQuestionCenter questions={questions} setQuestions={setQuestions} profile={intakeProfile} />
     <section className="sync-banner">
-      <b>当前展示版本：{portalData.consultantReview?.status || '顾问已发布版本'}</b>
-      <span>来源：{portalData.source?.system || '内置演示数据'} · 存储模式：{portalMode || 'localStorage'} · 最近发布：{applicant.lastPublished || portalData.consultantReview?.reviewedAt || '待发布'}</span>
+      <b>本次生成状态：{runResult?.generatedAt ? '已根据当前录入资料生成方案' : hasUserInput ? '已录入资料，等待生成方案' : '尚未录入资料'}</b>
+      <span>顾问发布版本：{portalData.consultantReview?.status || '顾问已发布版本'} · 当前资料：{hasUserInput ? '来自申请者录入' : '未录入，显示演示占位'} · 生成时间：{runResult?.generatedAt ? new Date(runResult.generatedAt).toLocaleString('zh-CN', { hour12: false }) : '待生成'}</span>
     </section>
     <section className="grid-4">
-      <article className="metric"><span>当前阶段</span><b>{applicant.currentStage}</b><small>负责顾问：{applicant.consultant}</small></article>
-      <article className="metric"><span>总体进度</span><b>{applicant.progress}%</b><small>按任务、材料、项目状态估算</small></article>
-      <article className="metric"><span>德国制参考成绩</span><b>{runResult?.grade?.value || applicant.germanGrade}</b><small>仅供初筛，最终以学校认定为准</small></article>
-      <article className="metric"><span>本周高风险</span><b>{visibleRisks.filter(r => r.level === '高').length || 1} 项</b><small>仅展示顾问允许用户可见的风险</small></article>
+      <article className="metric"><span>申请者</span><b>{applicant.name || '待填写'}</b><small>{applicant.university || '院校待填'} · {applicant.major || '专业待填'}</small></article>
+      <article className="metric"><span>目标方向</span><b>{applicant.targetDirection || '待填写'}</b><small>{applicant.crossMajor || '跨专业情况待填'} · {applicant.intake || '入学季待填'}</small></article>
+      <article className="metric"><span>德国制参考成绩</span><b>{currentGermanGrade}</b><small>{applicant.averageScore || '-'} / {applicant.maxScore || '-'}，及格线 {applicant.passScore || '-'}</small></article>
+      <article className="metric"><span>本次高风险</span><b>{matchingRows.filter(r => ['高', '极高'].includes(r.riskLevel || r.risk)).length || visibleRisks.filter(r => r.level === '高').length || 0} 项</b><small>根据当前资料初筛，需顾问复核</small></article>
     </section>
     <V04ResultPanel result={runResult} />
     <VerificationTable programs={runResult?.programs || []} />
     <section className="panel two-col">
-      <div><h2>我的资料摘要</h2><div className="info-list">
-        <p><b>本科：</b>{applicant.university} · {applicant.major}</p>
-        <p><b>目标：</b>{applicant.targetDirection} · {applicant.intake}</p>
-        <p><b>语言：</b>{applicant.english}</p>
-        <p><b>APS：</b><Status value={applicant.apsStatus} /></p>
+      <div><h2>当前录入资料摘要</h2><div className="info-list">
+        <p><b>本科：</b>{applicant.university || '待填写'} · {applicant.major || '待填写'}</p>
+        <p><b>目标：</b>{applicant.targetDirection || '待填写'} · {applicant.intake || '待填写'}</p>
+        <p><b>语言：</b>{applicant.english || '英语待填'} / {applicant.german || '德语待填'}</p>
+        <p><b>APS：</b><Status value={applicant.apsStatus || '待填写'} /></p>
+        <p><b>经历：</b>{applicant.experiences || '待补充实习 / 科研 / 项目经历'}</p>
       </div></div>
       <div><h2>材料状态</h2><div className="mini-table">{portalMaterials.map(m => <div key={m.name}><b>{m.name}</b><Status value={m.status} /><small>{m.note}</small></div>)}</div></div>
     </section>
-    <section className="panel" data-nav="projects"><h2>顾问发布的申请项目</h2><div className="cards">{portalPrograms.map(p => <article className="program" key={`${p.university}-${p.program}`}><div><span>{p.university}</span><h3>{p.program}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>最近核验</dt><dd>{p.checkedAt || '待官网复核'}</dd><dt>来源入口</dt><dd><a href={p.source} target="_blank">{p.source}</a></dd></dl></article>)}</div></section>
+    <section className="panel" data-nav="projects"><div className="section-title"><div><h2>{generatedPrograms.length ? '本次生成的申请项目初筛' : '顾问发布的申请项目'}</h2><p className="muted">{generatedPrograms.length ? '以下结果来自当前录入资料的实时计算，正式申请前仍需顾问与官网复核。' : '尚未基于当前资料生成，当前显示顾问发布/演示项目。'}</p></div><Status value={generatedPrograms.length ? '当前资料驱动' : '演示/发布版本'} /></div><div className="cards">{portalPrograms.map(p => <article className="program" key={`${p.university}-${p.program || p.programName}`}><div><span>{p.university}</span><h3>{p.program || p.programName}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>最近核验</dt><dd>{p.checkedAt || p.checkedDate || '待官网复核'}</dd><dt>来源入口</dt><dd>{p.source ? <a href={p.source} target="_blank">{p.source}</a> : <span>待补充官网来源</span>}</dd></dl></article>)}</div></section>
     <section className="panel two-col" data-nav="tasks"><div><h2>本周我的任务</h2><TaskTable rows={portalTasks.filter(t => t.owner?.includes('申请者'))} /></div><div data-nav="risks"><h2>顾问发布的风险提醒</h2>{visibleRisks.length ? visibleRisks.map(r => <div className="review-item" key={`${r.type}-${r.description}`}><b>{r.type}</b><Status value={r.level} /><p>{r.description}</p><small>{r.suggestedAction}</small></div>) : <p className="muted">暂无新增用户可见风险。</p>}</div></section>
     <section className="panel two-col"><WeeklyReport applicantOnly report={portalReport} /><div><h2>已发布专家团结论</h2>{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
   </>;
