@@ -1499,8 +1499,34 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
   const syncStatus = portalData?.syncStatus || loop?.syncStatus;
   const applicantSnapshot = portalData?.applicantSnapshot || loop?.applicantSnapshot || portalData?.applicant;
   const consultantReview = portalData?.consultantReview;
-  const hasApplicantGeneratedData = Boolean((portalData?.materials?.length || 0) || (portalData?.tasks?.length || 0) || (portalData?.risks?.length || 0) || (portalData?.documents?.length || 0));
+  const materialsCount = portalData?.materials?.length || 0;
+  const tasksCount = portalData?.tasks?.length || 0;
+  const risksCount = portalData?.risks?.length || 0;
+  const docsCount = portalData?.documents?.length || 0;
+  const hasApplicantGeneratedData = Boolean(materialsCount || tasksCount || risksCount || docsCount);
   const applicantLoopReady = Boolean(syncStatus?.applicantReady || loop || hasApplicantGeneratedData);
+  const reviewTotal = consultantReview?.totalCount || 4;
+  const reviewChecked = consultantReview?.checkedCount || 0;
+  const reviewProgress = Math.min(100, Math.round((reviewChecked / reviewTotal) * 100));
+  const blockedCount = consultantReview?.blockedCount || 0;
+  const sourceCompleteness = Math.min(100, Math.round(((materialsCount ? 1 : 0) + (tasksCount ? 1 : 0) + (risksCount ? 1 : 0) + (docsCount ? 1 : 0) + (applicantLoopReady ? 1 : 0)) / 5 * 100));
+  const deliveryHealth = Math.max(0, Math.min(100, Math.round((sourceCompleteness * 0.45) + (reviewProgress * 0.4) + ((blockedCount ? 35 : 100) * 0.15))));
+  const slaStatus = consultantReview?.updatedAt ? (blockedCount ? '需管理者跟进' : 'SLA 正常') : '待顾问复核';
+  const qualityRows = [
+    { label: '资料完整度', value: sourceCompleteness, note: `${materialsCount} 材料 · ${docsCount} 文书 · ${risksCount} 风险` },
+    { label: '顾问复核进度', value: reviewProgress, note: `${reviewChecked}/${reviewTotal} 项已确认` },
+    { label: '交付健康度', value: deliveryHealth, note: blockedCount ? `${blockedCount} 项阻塞需处理` : '当前无阻塞项' }
+  ];
+  const efficiencyRows = [
+    { label: '申请者生成包', done: applicantLoopReady, detail: applicantLoopReady ? '已生成并可同步' : '等待申请者生成' },
+    { label: '顾问复核', done: reviewProgress >= 100 && !blockedCount, detail: consultantReview?.decision || '待顾问处理' },
+    { label: '管理者监控', done: Boolean(consultantReview), detail: consultantReview ? '已承接复核结果' : '等待顾问决策' }
+  ];
+  const riskSummary = [
+    { label: '高风险阻塞', value: blockedCount, status: blockedCount ? '需处理' : '正常' },
+    { label: '待复核风险', value: risksCount, status: risksCount ? '待复核' : '低风险' },
+    { label: '项目库待扩展', value: projectLibrary.filter(p => String(p.status).includes('待')).length, status: '持续维护' }
+  ];
   return <>
     <Header eyebrow="管理员后台" title="系统运营、专家团配置与 Supabase 接入诊断" desc="管理员维护三角色权限、项目库质量、专家团规则、每周一自动周报任务和数据库持久化配置。" actions={<button className="primary" onClick={refreshStatus}>刷新数据库状态</button>} />
     <ExpertCenterMapping />
@@ -1512,7 +1538,8 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
       <article className="metric"><span>数据库模式</span><b>{portalStatus?.mode || '检测中'}</b><small>{portalStatus?.supabaseConfigured ? 'Supabase 已配置' : '当前仍为 fallback / memory'}</small></article>
       <article className="metric"><span>同步方式</span><b>API</b><small>顾问发布 → Portal API → Supabase / fallback</small></article>
     </section>
-    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={applicantLoopReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="review-item"><b>顾问同步复核结果</b><Status value={consultantReview?.decision || '待顾问复核'} /><p>{consultantReview?.message || '管理者可在这里查看顾问是否已发布、暂缓发布或退回申请者补充。'}</p><small>{consultantReview?.updatedAt ? `最近复核：${new Date(consultantReview.updatedAt).toLocaleString('zh-CN', { hour12: false })} · ${consultantReview.reviewer || '顾问'}` : '等待顾问端提交复核决策'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{portalData?.materials?.length || 0}</b><small>申请者待补</small></article><article className="metric"><span>复核进度</span><b>{consultantReview ? `${consultantReview.checkedCount}/${consultantReview.totalCount}` : '0/4'}</b><small>{consultantReview?.blockedCount ? `${consultantReview.blockedCount} 项阻塞` : '顾问确认状态'}</small></article><article className="metric"><span>风险</span><b>{portalData?.risks?.length || 0}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{portalData?.documents?.length || 0}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>{consultantReview?.decision ? `当前顾问决策：${consultantReview.decision}` : '等待顾问端发布或退回复核结论。'}</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
+    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={applicantLoopReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="review-item"><b>顾问同步复核结果</b><Status value={consultantReview?.decision || '待顾问复核'} /><p>{consultantReview?.message || '管理者可在这里查看顾问是否已发布、暂缓发布或退回申请者补充。'}</p><small>{consultantReview?.updatedAt ? `最近复核：${new Date(consultantReview.updatedAt).toLocaleString('zh-CN', { hour12: false })} · ${consultantReview.reviewer || '顾问'}` : '等待顾问端提交复核决策'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{materialsCount}</b><small>申请者待补</small></article><article className="metric"><span>复核进度</span><b>{consultantReview ? `${reviewChecked}/${reviewTotal}` : '0/4'}</b><small>{blockedCount ? `${blockedCount} 项阻塞` : '顾问确认状态'}</small></article><article className="metric"><span>风险</span><b>{risksCount}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{docsCount}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>{consultantReview?.decision ? `当前顾问决策：${consultantReview.decision}` : '等待顾问端发布或退回复核结论。'}</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
+    <section className="panel manager-quality-dashboard" data-nav="quality-dashboard"><div className="section-title"><div><h2>质量监控与效率驾驶舱</h2><p className="muted">管理者用来判断本次申请包是否可交付、顾问复核是否超时、风险是否需要升级处理。</p></div><Status value={slaStatus} /></div><section className="grid-4 compact-grid"><article className="metric accent"><span>交付健康度</span><b>{deliveryHealth}%</b><small>资料完整度 + 复核进度 + 阻塞项</small></article><article className="metric"><span>资料完整度</span><b>{sourceCompleteness}%</b><small>{materialsCount} 材料 · {docsCount} 文书</small></article><article className="metric"><span>顾问复核</span><b>{reviewProgress}%</b><small>{reviewChecked}/{reviewTotal} 项确认</small></article><article className="metric"><span>SLA 状态</span><b>{slaStatus}</b><small>{consultantReview?.updatedAt ? '已有顾问处理记录' : '等待首次复核'}</small></article></section><div className="two-col tight"><div><h3>质量指标</h3>{qualityRows.map(row => <div className="quality-row" key={row.label}><div><b>{row.label}</b><span>{row.value}%</span></div><progress value={row.value} max="100" /><small>{row.note}</small></div>)}</div><div><h3>效率漏斗</h3><div className="efficiency-funnel">{efficiencyRows.map((row, index) => <div className={row.done ? 'done' : 'pending'} key={row.label}><span>{index + 1}</span><b>{row.label}</b><small>{row.detail}</small></div>)}</div><h3>风险分布</h3><div className="risk-chips">{riskSummary.map(row => <span key={row.label}><b>{row.value}</b>{row.label}<Status value={row.status} /></span>)}</div></div></div></section>
     <section className="panel two-col" data-nav="database">
       <div>
         <h2>Supabase 配置诊断</h2>
