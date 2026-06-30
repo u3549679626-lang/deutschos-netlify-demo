@@ -624,12 +624,19 @@ function mergePortalData(payload) {
     weeklyReport: payload.weeklyReport || weeklyReport,
     expertOutputs: payload.expertOutputs || expertOutputs,
     applicantLoop: payload.applicantLoop || null,
-    consultantReview: {
-      status: '顾问已审核并发布',
-      reviewer: 'DeutschOS 顾问',
-      reviewedAt: new Date().toISOString().slice(0, 10),
-      note: payload.consultantReview?.note || '顾问已将小浣熊后台结果审核后发布给申请者。'
-    },
+    consultantReview: payload.consultantReview ? {
+      status: payload.consultantReview.status || payload.consultantReview.decision || '顾问已审核并发布',
+      decision: payload.consultantReview.decision || payload.consultantReview.status || '顾问已审核并发布',
+      reviewer: payload.consultantReview.reviewer || 'DeutschOS 顾问',
+      reviewedAt: payload.consultantReview.reviewedAt || payload.consultantReview.updatedAt || new Date().toISOString(),
+      updatedAt: payload.consultantReview.updatedAt || payload.consultantReview.reviewedAt || new Date().toISOString(),
+      message: payload.consultantReview.message || payload.consultantReview.note || '顾问已将小浣熊后台结果审核后发布给申请者。',
+      note: payload.consultantReview.note || payload.consultantReview.message || '顾问已将小浣熊后台结果审核后发布给申请者。',
+      checkedCount: payload.consultantReview.checkedCount ?? 0,
+      totalCount: payload.consultantReview.totalCount ?? 4,
+      blockedCount: payload.consultantReview.blockedCount ?? 0,
+      reviewStates: payload.consultantReview.reviewStates || {}
+    } : null,
     source: payload.source || { system: '手动同步', generatedAt: new Date().toISOString() }
   };
 }
@@ -659,6 +666,7 @@ function mergeIncomingPortalData(incoming = {}) {
     weeklyReport: incoming.weeklyReport || local.weeklyReport,
     expertOutputs: incoming.expertOutputs || local.expertOutputs,
     applicantLoop: incoming.applicantLoop || local.applicantLoop || null,
+    consultantReview: incoming.consultantReview || local.consultantReview || null,
     source: incoming.source || local.source
   });
 }
@@ -1319,7 +1327,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
   return <>
     <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button><button className="primary" onClick={publishSync}>顾问审核后发布</button><button className="secondary" onClick={refreshPortal}>从数据库/API刷新</button></>} />
     <StaffQuestionInbox role="consultant" questions={questions} setQuestions={setQuestions} />
-    <ConsultantApplicantSyncCard portalData={portalData} portalMode={portalMode} />
+    <ConsultantApplicantSyncCard portalData={portalData} setPortalData={setPortalData} setPortalMode={setPortalMode} portalMode={portalMode} />
     <ConsultantCourseReviewPanel engine={runResult?.courseMatchingEngine} />
     <section className="grid-4">
       <article className="metric"><span>负责申请者</span><b>1</b><small>演示账号</small></article>
@@ -1347,7 +1355,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
 
 
 
-function ConsultantApplicantSyncCard({ portalData, portalMode }) {
+function ConsultantApplicantSyncCard({ portalData, setPortalData, setPortalMode, portalMode }) {
   const loop = portalData?.applicantLoop;
   const applicant = loop?.applicantSnapshot || portalData?.applicant || {};
   const materials = portalData?.materials || [];
@@ -1366,22 +1374,41 @@ function ConsultantApplicantSyncCard({ portalData, portalMode }) {
   ];
   const checkedCount = reviewItems.filter(item => reviewStates[item.id] === '已确认').length;
   const blockedCount = reviewItems.filter(item => reviewStates[item.id] === '需退回补充').length;
+  const saveConsultantReview = (decision, message, extra = {}) => {
+    const review = {
+      decision,
+      message,
+      reviewStates,
+      checkedCount,
+      totalCount: reviewItems.length,
+      blockedCount,
+      updatedAt: new Date().toISOString(),
+      reviewer: '顾问演示账号',
+      ...extra
+    };
+    const merged = mergePortalData({ consultantReview: review });
+    localStorage.setItem(storageKey, JSON.stringify(merged));
+    setPortalData?.(merged);
+    setPortalMode?.('consultant-review-local');
+    setDecisionMessage(message);
+  };
   const markItem = (id, status) => {
-    setReviewStates(prev => ({ ...prev, [id]: status }));
+    const nextStates = { ...reviewStates, [id]: status };
+    setReviewStates(nextStates);
     setDecisionMessage(`已将复核项标记为：${status}`);
   };
   const publishDecision = () => {
     if (blockedCount > 0) {
-      setDecisionMessage(`仍有 ${blockedCount} 项需退回补充，请先处理后再发布。`);
+      saveConsultantReview('需补充后再发布', `仍有 ${blockedCount} 项需退回补充，请先处理后再发布。`);
       return;
     }
     if (checkedCount < reviewItems.length) {
-      setDecisionMessage(`已确认 ${checkedCount}/${reviewItems.length} 项，建议全部确认后再发布给申请者。`);
+      saveConsultantReview('部分确认，暂缓发布', `已确认 ${checkedCount}/${reviewItems.length} 项，建议全部确认后再发布给申请者。`);
       return;
     }
-    setDecisionMessage('顾问已确认全部复核项，可发布给申请者门户。');
+    saveConsultantReview('已发布给申请者', '顾问已确认全部复核项，可发布给申请者门户。');
   };
-  const returnDecision = () => setDecisionMessage('已生成退回补充意见：请申请者优先补课程描述、APS 状态和语言成绩证明。');
+  const returnDecision = () => saveConsultantReview('退回申请者补充', '已生成退回补充意见：请申请者优先补课程描述、APS 状态和语言成绩证明。', { blockedCount: Math.max(blockedCount, 1) });
   return <section className="panel consultant-sync-review" data-nav="applicant-sync-review">
     <div className="section-title"><div><h2>申请者同步复核台</h2><p className="muted">申请者生成方案后自动同步到顾问端；顾问在这里完成“收到申请包 → 逐项复核 → 发布 / 退回”的最小闭环。</p></div><Status value={generated ? '已收到申请包' : '待申请者生成'} /></div>
     <section className="grid-4 compact-grid">
@@ -1471,6 +1498,7 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
   const loop = portalData?.applicantLoop;
   const syncStatus = portalData?.syncStatus || loop?.syncStatus;
   const applicantSnapshot = portalData?.applicantSnapshot || loop?.applicantSnapshot || portalData?.applicant;
+  const consultantReview = portalData?.consultantReview;
   const hasApplicantGeneratedData = Boolean((portalData?.materials?.length || 0) || (portalData?.tasks?.length || 0) || (portalData?.risks?.length || 0) || (portalData?.documents?.length || 0));
   const applicantLoopReady = Boolean(syncStatus?.applicantReady || loop || hasApplicantGeneratedData);
   return <>
@@ -1484,7 +1512,7 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
       <article className="metric"><span>数据库模式</span><b>{portalStatus?.mode || '检测中'}</b><small>{portalStatus?.supabaseConfigured ? 'Supabase 已配置' : '当前仍为 fallback / memory'}</small></article>
       <article className="metric"><span>同步方式</span><b>API</b><small>顾问发布 → Portal API → Supabase / fallback</small></article>
     </section>
-    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={applicantLoopReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{portalData?.materials?.length || 0}</b><small>申请者待补</small></article><article className="metric"><span>任务</span><b>{portalData?.tasks?.length || 0}</b><small>申请者 + 顾问</small></article><article className="metric"><span>风险</span><b>{portalData?.risks?.length || 0}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{portalData?.documents?.length || 0}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
+    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={applicantLoopReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="review-item"><b>顾问同步复核结果</b><Status value={consultantReview?.decision || '待顾问复核'} /><p>{consultantReview?.message || '管理者可在这里查看顾问是否已发布、暂缓发布或退回申请者补充。'}</p><small>{consultantReview?.updatedAt ? `最近复核：${new Date(consultantReview.updatedAt).toLocaleString('zh-CN', { hour12: false })} · ${consultantReview.reviewer || '顾问'}` : '等待顾问端提交复核决策'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{portalData?.materials?.length || 0}</b><small>申请者待补</small></article><article className="metric"><span>复核进度</span><b>{consultantReview ? `${consultantReview.checkedCount}/${consultantReview.totalCount}` : '0/4'}</b><small>{consultantReview?.blockedCount ? `${consultantReview.blockedCount} 项阻塞` : '顾问确认状态'}</small></article><article className="metric"><span>风险</span><b>{portalData?.risks?.length || 0}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{portalData?.documents?.length || 0}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>{consultantReview?.decision ? `当前顾问决策：${consultantReview.decision}` : '等待顾问端发布或退回复核结论。'}</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
     <section className="panel two-col" data-nav="database">
       <div>
         <h2>Supabase 配置诊断</h2>
