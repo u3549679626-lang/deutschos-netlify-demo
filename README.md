@@ -100,9 +100,9 @@ deutschos-mvp/
 
 复制 `.env.example` 为 `.env`，按需配置：
 
-- `OPENAI_API_KEY`：可选；配置后可接入真实 AI 模型。
-- `OPENAI_BASE_URL`：可选。
-- `OPENAI_MODEL`：可选。
+- `DEEPSEEK_API_KEY`：可选但推荐；配置后所有 AI 建议、文书初稿和 AI 顾问问答统一走 DeepSeek 服务端代理。
+- `DEEPSEEK_BASE_URL`：可选，默认 `https://api.deepseek.com`。
+- `DEEPSEEK_MODEL`：可选，默认 `deepseek-chat`。
 - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`：可选；配置后可保存用户档案。
 
 未配置 AI Key 时，系统仍可使用内置 Demo 逻辑跑通完整流程。
@@ -139,4 +139,4 @@ SUPABASE-AUTH-RBAC-SETUP.md
 Project Settings → Environment Variables
 ```
 
-注意：`SUPABASE_SERVICE_ROLE_KEY`、`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、通知密钥等只能放在服务端环境变量，禁止写入前端代码或提交到 GitHub。
+注意：`SUPABASE_SERVICE_ROLE_KEY`、`DEEPSEEK_API_KEY`、通知密钥等只能放在服务端环境变量，禁止写入前端代码或提交到 GitHub。

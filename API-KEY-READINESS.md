@@ -1,17 +1,18 @@
 # DeutschOS API Key Readiness
 
-本文件用于下一步在 Vercel 中接入真实 API Key。请不要把真实密钥写入仓库；所有真实值都应配置在：
+本文件用于在 Vercel 中接入真实 API Key。请不要把真实密钥写入仓库；所有真实值都应配置在：
 
 `Vercel Project → Settings → Environment Variables`
 
 ## 1. 当前 Demo 状态
 
-当前 Demo 可以在没有真实 LLM Key 的情况下运行：
+当前 Demo 可以在没有真实 DeepSeek Key 的情况下运行：
 
 - 前端门户使用静态/确定性 Demo 数据展示申请者、顾问、管理员三端；
 - 服务端 `/api/demo/run`、`/api/analysis/run` 通过 `server/demo-core.mjs` 生成确定性分析结果；
-- 服务端 `/api/ai/health` 可检查 LLM Provider 是否已配置，`/api/ai/advice` 可通过服务端代理调用 DeepSeek/OpenAI-compatible Chat Completions；
-- Supabase Auth 若未创建演示账号，会返回 401，但前端有 fallback 演示模式。
+- 服务端 `/api/ai/health` 检查 DeepSeek 是否已配置；
+- 服务端 `/api/ai/advice`、`/api/materials/draft`、`/api/chat` 统一通过服务端 DeepSeek 代理调用模型；
+- 未配置 `DEEPSEEK_API_KEY` 时，接口返回演示 fallback，不影响 Demo 主流程。
 
 ## 2. 已在代码中实际使用的密钥/环境变量
 
@@ -22,25 +23,71 @@
 | Supabase URL | `SUPABASE_URL` | 服务端 | 服务端 auth/sync 读取 | 在 Vercel 配置真实值 |
 | Supabase anon key | `SUPABASE_ANON_KEY` | 服务端 | 服务端 auth/sync 读取 | 在 Vercel 配置真实值 |
 | Supabase service role | `SUPABASE_SERVICE_ROLE_KEY` | 服务端 | 后续服务端管理任务预留，禁止前端暴露 | 仅生产服务端配置 |
+| DeepSeek API Key | `DEEPSEEK_API_KEY` | 服务端 | AI 建议/文书/问答统一读取 | 在 Vercel 配置真实值 |
+| DeepSeek Base URL | `DEEPSEEK_BASE_URL` | 服务端 | 可选，默认 `https://api.deepseek.com` | 通常无需配置 |
+| DeepSeek 模型 | `DEEPSEEK_MODEL` | 服务端 | 可选，默认 `deepseek-chat` | 可按需改为授权模型 |
 
-## 3. 下一步建议接入的 AI Key
+## 3. DeepSeek 接入范围
 
-建议先只接一个 LLM Provider，避免并行调试复杂化。
+当前所有需要大模型能力的地方已统一指向 DeepSeek 服务端代理：
 
-| 推荐优先级 | 用途 | 变量名 | 可见范围 | 说明 |
-|---:|---|---|---|---|
-| 1 | LLM Provider 选择 | `LLM_PROVIDER` | 服务端 | 可填 `sensenova`、`deepseek` 或 `openai`；不填时按已有 Key 自动判断 |
-| 1 | SenseNova / 小浣熊兼容 Token | `SENSENOVA_API_KEY` | 服务端 | 用于商汤 SenseNova/OpenAI 兼容接口；旧 Token 可先放这里验证，但建议后续轮换 |
-| 1 | SenseNova 兼容 API 地址 | `SENSENOVA_BASE_URL` | 服务端 | 默认 `https://api.sensenova.cn/compatible-mode/v1`；如后台文档显示 Token Plan 地址则以后台为准 |
-| 1 | SenseNova 模型名 | `SENSENOVA_MODEL` | 服务端 | 默认 `SenseChat`；如控制台显示 `sensenova-6.7-flash-lite` 等可替换 |
-| 2 | DeepSeek 文书/问答/课程解释 | `DEEPSEEK_API_KEY` | 服务端 | 可作为备用模型 |
-| 2 | DeepSeek API 地址 | `DEEPSEEK_BASE_URL` | 服务端 | 默认 `https://api.deepseek.com` |
-| 2 | DeepSeek 模型名 | `DEEPSEEK_MODEL` | 服务端 | 默认 `deepseek-chat` |
-| 3 | OpenAI-compatible 备用 | `OPENAI_API_KEY` | 服务端 | 可作为其他兼容供应商迁移接口 |
-| 3 | OpenAI-compatible 地址 | `OPENAI_BASE_URL` | 服务端 | 默认 `https://api.openai.com/v1` |
-| 3 | OpenAI-compatible 模型 | `OPENAI_MODEL` | 服务端 | 默认 `gpt-4o-mini`；视供应商而定 |
+| 接口 | 用途 | 未配置 Key 时 |
+|---|---|---|
+| `/api/ai/health` | 检查 DeepSeek 配置状态 | 返回 `configured: false` |
+| `/api/ai/advice` | 申请方案 AI 建议 | 返回本地专家 fallback |
+| `/api/materials/draft` | 文书/课程匹配说明初稿 | 返回演示 fallback 文书 |
+| `/api/chat` | AI 顾问问答 | 返回演示 fallback 回复 |
+| `/api/demo/run` | 端到端 Demo 分析 | 内部合并 DeepSeek 建议或 fallback |
 
-## 4. 未来模块可能需要的 Key
+## 4. Vercel 中配置 DeepSeek
+
+在 `Vercel Project → Settings → Environment Variables` 中增加以下服务端变量，不要使用 `VITE_` 前缀：
+
+```env
+DEEPSEEK_API_KEY=<你的 DeepSeek API Key>
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+保存后重新部署 Production。
+
+## 5. 验收方式
+
+部署后访问：
+
+```text
+https://deutschos-netlify-demo.vercel.app/api/ai/health
+```
+
+期望看到：
+
+```json
+{
+  "provider": "deepseek",
+  "configured": true,
+  "model": "deepseek-chat"
+}
+```
+
+然后通过页面生成方案、文书初稿或 AI 顾问问答，接口应返回：
+
+```json
+{
+  "mode": "ai-env-proxy",
+  "provider": "deepseek-server-proxy"
+}
+```
+
+如果仍显示 fallback，通常表示环境变量没有配置到当前 Production 环境，或配置后未重新部署。
+
+## 6. 安全边界
+
+- `VITE_*` 会进入浏览器 bundle，只能放公开 anon key 或非敏感配置；
+- `SERVICE_ROLE_KEY`、`DEEPSEEK_API_KEY`、SMTP 密码、App Secret 必须只放服务端环境变量；
+- 不要在 README、截图、聊天记录、Git 提交中出现真实 Key；
+- 接入前先确认 Vercel 的 Production / Preview / Development 环境变量是否分别配置。
+
+## 7. 未来模块可能需要的 Key
 
 | 模块 | 可能变量 | 是否当前必须 | 备注 |
 |---|---|---|---|
@@ -48,37 +95,3 @@
 | 政策雷达通知 | `LARK_APP_ID`, `LARK_APP_SECRET` | 否 | 未来飞书/企业微信通知用 |
 | 邮件通知 | `EMAIL_SMTP_*` | 否 | 未来 deadline 邮件提醒用 |
 | 文件存储 | Supabase Storage 相关变量 | 否 | 如上传成绩单要持久化才需要 |
-
-## 5. 安全边界
-
-- `VITE_*` 会进入浏览器 bundle，只能放公开 anon key 或非敏感配置；
-- `SERVICE_ROLE_KEY`、LLM Key、SMTP 密码、App Secret 必须只放服务端环境变量；
-- 不要在 README、截图、聊天记录、Git 提交中出现真实 Key；
-- 接入前先确认 Vercel 的 Production / Preview / Development 环境变量是否分别配置。
-
-## 6. 推荐接入顺序
-
-1. 先按 `SUPABASE-AUTH-RBAC-SETUP.md` 补 Supabase 演示账号、RBAC 表和 Vercel 环境变量，消除 Auth 401；
-2. 在 Vercel 服务端环境变量中配置 SenseNova / 小浣熊兼容 Token：`LLM_PROVIDER=sensenova`、`SENSENOVA_API_KEY`、`SENSENOVA_BASE_URL`、`SENSENOVA_MODEL`；
-3. 通过 `/api/ai/health` 验证 Key 是否已生效，再用 `/api/ai/advice` 做模型调用 smoke test；
-4. 如果旧 Token 返回 401/403/模型不存在，优先到商汤平台确认 Token 类型、Base URL、模型权限，或轮换新 Token；
-5. 为政策雷达和官网核验再接搜索/抓取 Key；
-6. 最后接通知类 Key，例如 Lark/SMTP。
-
-## 7. Vercel 中接入 SenseNova / 小浣熊 Token
-
-在 `Vercel Project → Settings → Environment Variables` 中增加以下服务端变量，不要使用 `VITE_` 前缀：
-
-```env
-LLM_PROVIDER=sensenova
-SENSENOVA_API_KEY=<粘贴旧 Token 或后续轮换的新 Token>
-SENSENOVA_BASE_URL=https://api.sensenova.cn/compatible-mode/v1
-SENSENOVA_MODEL=SenseChat
-```
-
-保存后重新部署，验收：
-
-- `/api/ai/health` 应显示 `configured: true`、`provider: sensenova`；
-- `/api/ai/advice` 应返回 `mode: ai-env-proxy`；
-- 如果仍返回 `fallback-no-secret`，说明环境变量没有进入当前 Production 部署；
-- 如果返回上游 401/403，说明 Token 类型、权限或 Base URL 需要到商汤平台后台复核。

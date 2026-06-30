@@ -3,70 +3,11 @@ import { handlePortalRequest } from '../server/portal-store.mjs';
 import { handleAuthRequest } from '../server/auth-store.mjs';
 import { handleScheduledTaskRequest } from '../server/scheduled-tasks-store.mjs';
 
-function parseEnvList(value) {
-  return String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function uniqueList(items) {
-  return [...new Set(items.filter(Boolean))];
-}
-
 function sanitizeBaseUrl(value) {
   return String(value || '').replace(/\/$/, '');
 }
 
 function getLlmConfig() {
-  const provider = (process.env.LLM_PROVIDER || (process.env.SENSENOVA_API_KEY ? 'sensenova' : process.env.DEEPSEEK_API_KEY ? 'deepseek' : process.env.OPENAI_API_KEY ? 'openai' : 'none')).toLowerCase();
-  if (provider === 'sensenova') {
-    const baseUrl = sanitizeBaseUrl(process.env.SENSENOVA_BASE_URL || 'https://api.sensenova.cn/compatible-mode/v1');
-    const model = process.env.SENSENOVA_MODEL || 'SenseChat';
-    return {
-      configured: Boolean(process.env.SENSENOVA_API_KEY),
-      provider: 'sensenova',
-      apiKey: process.env.SENSENOVA_API_KEY,
-      baseUrl,
-      model,
-      candidateBaseUrls: uniqueList([
-        baseUrl,
-        ...parseEnvList(process.env.SENSENOVA_CANDIDATE_BASE_URLS),
-        'https://api.sensenova.cn/compatible-mode/v1',
-        'https://api.sensenova.cn/v1',
-        'https://token.sensenova.cn/v1'
-      ]).map(sanitizeBaseUrl),
-      candidateModels: uniqueList([
-        model,
-        ...parseEnvList(process.env.SENSENOVA_CANDIDATE_MODELS),
-        'SenseChat',
-        'SenseChat-5',
-        'sensenova-6.7-flash-lite'
-      ]),
-      candidateAuthSchemes: uniqueList([
-        ...parseEnvList(process.env.SENSENOVA_AUTH_SCHEMES),
-        'bearer',
-        'authorization-raw',
-        'x-api-key',
-        'api-key',
-        'x-sensenova-api-key'
-      ])
-    };
-  }
-  if (provider === 'openai') {
-    const baseUrl = sanitizeBaseUrl(process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1');
-    const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-    return {
-      configured: Boolean(process.env.OPENAI_API_KEY),
-      provider: 'openai',
-      apiKey: process.env.OPENAI_API_KEY,
-      baseUrl,
-      model,
-      candidateBaseUrls: [baseUrl],
-      candidateModels: [model],
-      candidateAuthSchemes: ['bearer']
-    };
-  }
   const baseUrl = sanitizeBaseUrl(process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com');
   const model = process.env.DEEPSEEK_MODEL || 'deepseek-chat';
   return {
@@ -74,16 +15,11 @@ function getLlmConfig() {
     provider: 'deepseek',
     apiKey: process.env.DEEPSEEK_API_KEY,
     baseUrl,
-    model,
-    candidateBaseUrls: [baseUrl],
-    candidateModels: [model],
-    candidateAuthSchemes: ['bearer']
+    model
   };
 }
 
-function getRequiredEnv(provider) {
-  if (provider === 'sensenova') return ['SENSENOVA_API_KEY', 'SENSENOVA_BASE_URL', 'SENSENOVA_MODEL'];
-  if (provider === 'openai') return ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL'];
+function getRequiredEnv() {
   return ['DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL'];
 }
 
@@ -108,11 +44,8 @@ function buildAiHealth() {
       provider: config.provider,
       model: config.model,
       baseUrlHost: config.configured ? safeUrlHost(config.baseUrl) : null,
-      candidateBaseUrlHosts: config.configured ? config.candidateBaseUrls.map(safeUrlHost).filter(Boolean) : [],
-      candidateModels: config.configured ? config.candidateModels : [],
-      candidateAuthSchemes: config.configured ? config.candidateAuthSchemes : [],
-      requiredEnv: getRequiredEnv(config.provider),
-      optionalDiagnosticEnv: config.provider === 'sensenova' ? ['SENSENOVA_CANDIDATE_BASE_URLS', 'SENSENOVA_CANDIDATE_MODELS', 'SENSENOVA_AUTH_SCHEMES'] : []
+      requiredEnv: getRequiredEnv(),
+      optionalEnv: ['DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL']
     },
     configured: true,
     provider: config.configured ? config.provider : 'local-expert-engine',
@@ -160,20 +93,14 @@ async function readBody(req) {
   return {};
 }
 
-function buildAuthHeaders(apiKey, scheme = 'bearer') {
-  const headers = { 'Content-Type': 'application/json' };
-  if (scheme === 'authorization-raw') headers.Authorization = apiKey;
-  else if (scheme === 'x-api-key') headers['X-API-Key'] = apiKey;
-  else if (scheme === 'api-key') headers['api-key'] = apiKey;
-  else if (scheme === 'x-sensenova-api-key') headers['x-sensenova-api-key'] = apiKey;
-  else headers.Authorization = `Bearer ${apiKey}`;
-  return headers;
+function buildAuthHeaders(apiKey) {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` };
 }
 
-async function callChatCompletions(config, prompt, baseUrl, model, authScheme) {
+async function callChatCompletions(config, prompt, baseUrl, model) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: buildAuthHeaders(config.apiKey, authScheme),
+    headers: buildAuthHeaders(config.apiKey),
     body: JSON.stringify({
       model,
       temperature: 0.2,
@@ -190,12 +117,11 @@ async function callChatCompletions(config, prompt, baseUrl, model, authScheme) {
   return { response, text, data };
 }
 
-function summarizeAiError(result, baseUrl, model, authScheme) {
+function summarizeAiError(result, baseUrl, model) {
   const raw = result?.data?.error?.message || result?.data?.message || result?.text || '';
   return {
     baseUrlHost: safeUrlHost(baseUrl),
     model,
-    authScheme,
     status: result?.response?.status || 0,
     statusText: result?.response?.statusText || 'request-failed',
     errorPreview: String(raw).replace(/Bearer\s+[\w.\-]+/gi, 'Bearer ***').slice(0, 180)
@@ -203,29 +129,37 @@ function summarizeAiError(result, baseUrl, model, authScheme) {
 }
 
 async function requestAiAdvice(config, prompt) {
-  const attempts = [];
-  const maxAttempts = Number(process.env.LLM_MAX_DIAGNOSTIC_ATTEMPTS || 24);
-  for (const baseUrl of config.candidateBaseUrls) {
-    for (const model of config.candidateModels) {
-      for (const authScheme of config.candidateAuthSchemes) {
-        if (attempts.length >= maxAttempts) return { ok: false, attempts, truncated: true };
-        try {
-          const result = await callChatCompletions(config, prompt, baseUrl, model, authScheme);
-          if (result.response.ok) return { ok: true, model, baseUrl, authScheme, data: result.data };
-          attempts.push(summarizeAiError(result, baseUrl, model, authScheme));
-        } catch (error) {
-          attempts.push({ baseUrlHost: safeUrlHost(baseUrl), model, authScheme, status: 0, statusText: 'network-error', errorPreview: String(error.message || error).slice(0, 180) });
-        }
-      }
-    }
+  try {
+    const result = await callChatCompletions(config, prompt, config.baseUrl, config.model);
+    if (result.response.ok) return { ok: true, model: config.model, baseUrl: config.baseUrl, data: result.data };
+    return { ok: false, attempts: [summarizeAiError(result, config.baseUrl, config.model)] };
+  } catch (error) {
+    return { ok: false, attempts: [{ baseUrlHost: safeUrlHost(config.baseUrl), model: config.model, status: 0, statusText: 'network-error', errorPreview: String(error.message || error).slice(0, 180) }] };
   }
-  return { ok: false, attempts };
+}
+
+function cleanAiContent(content = '') {
+  return String(content || '').replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/,'').trim();
+}
+
+async function generateWithDeepSeek(prompt, { expectJson = false } = {}) {
+  const config = getLlmConfig();
+  if (!config.configured) return { ok: false, mode: 'fallback', reason: 'DEEPSEEK_API_KEY 未配置', provider: 'deepseek-server-proxy' };
+  const aiResult = await requestAiAdvice(config, prompt);
+  if (!aiResult.ok) return { ok: false, mode: 'fallback', provider: 'deepseek-server-proxy', attempts: aiResult.attempts || [] };
+  const content = cleanAiContent(aiResult.data?.choices?.[0]?.message?.content || '');
+  if (!expectJson) return { ok: true, mode: 'ai-env-proxy', provider: 'deepseek-server-proxy', model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), content };
+  try {
+    return { ok: true, mode: 'ai-env-proxy', provider: 'deepseek-server-proxy', model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), json: JSON.parse(content) };
+  } catch {
+    return { ok: true, mode: 'ai-env-proxy', provider: 'deepseek-server-proxy', model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), content, json: null, parseWarning: 'DeepSeek 返回非 JSON，已按原文处理。' };
+  }
 }
 
 async function buildAiAdvice(profile = {}, programs = []) {
   const demo = runFullDemo(profile, programs);
   const config = getLlmConfig();
-  if (!config.configured) return buildFallbackAdvice(demo, 'local-expert-engine', '当前使用服务端本地专家引擎生成建议；未配置外部 LLM Key，不影响 Demo 主流程。');
+  if (!config.configured) return buildFallbackAdvice(demo, 'local-expert-engine', '当前使用服务端本地专家引擎生成建议；未配置 DEEPSEEK_API_KEY，不影响 Demo 主流程。');
 
   const safePayload = {
     profile: demo.profile,
@@ -254,7 +188,7 @@ async function buildAiAdvice(profile = {}, programs = []) {
   let parsed;
   try { parsed = JSON.parse(content.replace(/^```json\s*/i, '').replace(/```$/,'').trim()); }
   catch { parsed = { advice: [content], nextActions: [], riskWarnings: ['AI 返回非 JSON 格式，已按原文展示。'] }; }
-  return { ok: true, mode: 'ai-env-proxy', provider: `${config.provider}-server-proxy`, model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), authScheme: aiResult.authScheme, warning: 'API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
+  return { ok: true, mode: 'ai-env-proxy', provider: 'deepseek-server-proxy', model: aiResult.model, baseUrlHost: safeUrlHost(aiResult.baseUrl), warning: 'DeepSeek API Key 仅从 Vercel 服务端环境变量读取，不会暴露给浏览器或公开仓库。', ...parsed };
 }
 
 export default async function handler(req, res) {
@@ -313,12 +247,18 @@ export default async function handler(req, res) {
     if (path === '/materials/draft') {
       const demo = runFullDemo(body.profile || {}, body.analysis?.programs || []);
       const type = body.type || 'Motivation Letter';
-      return res.status(200).json({ title: `${type} 初稿`, draft: type.includes('Course') ? demo.drafts.courseMappingStatement : demo.drafts.motivationLetter });
+      const fallbackDraft = type.includes('Course') ? demo.drafts.courseMappingStatement : demo.drafts.motivationLetter;
+      const prompt = `你是德国硕士申请文书顾问。请基于以下资料生成${type}初稿。要求：不编造经历；说明课程匹配、项目动机、材料缺口；官网未核实信息标注待人工复核；中文说明清晰，可后续改写英文。输出 600-900 字。\n\n${JSON.stringify({ type, profile: body.profile || {}, analysis: body.analysis || {}, demoSummary: { grade: demo.grade, matching: demo.matching?.slice?.(0, 3) } })}`;
+      const ai = await generateWithDeepSeek(prompt);
+      return res.status(200).json({ title: `${type} 初稿`, provider: ai.provider || 'deepseek-server-proxy', mode: ai.mode || 'fallback', draft: ai.ok ? ai.content : fallbackDraft, warning: ai.ok ? undefined : '未配置或未接通 DeepSeek，当前返回演示 fallback。' });
     }
     if (path === '/application-guide') return res.status(200).json({ sections: [ { title: '申请路径核验', enabled: true, steps: ['确认直申/uni-assist/VPD', '确认中国申请者 APS 要求', '记录来源链接和抓取日期'] }, { title: '提交前检查', enabled: true, steps: ['检查课程匹配表', '检查语言成绩', '检查文书真实性', '检查 deadline'] } ]});
     if (path === '/chat') {
       const demo = runFullDemo(body.profile || {}, body.analysis?.programs || []);
-      return res.status(200).json({ answer: `基于当前档案，建议先完成 APS 与官网 deadline/VPD 复核。当前德国制参考成绩为 ${demo.grade.value}，课程匹配最高项目为 ${demo.matching[0]?.university} - ${demo.matching[0]?.programName}，主要风险是：${demo.matching[0]?.gapModules.join('；')}。` });
+      const fallbackAnswer = `基于当前档案，建议先完成 APS 与官网 deadline/VPD 复核。当前德国制参考成绩为 ${demo.grade.value}，课程匹配最高项目为 ${demo.matching[0]?.university} - ${demo.matching[0]?.programName}，主要风险是：${demo.matching[0]?.gapModules.join('；')}。`;
+      const prompt = `你是 DeutschOS 德国硕士申请 AI 顾问。请基于申请者档案和分析结果回答用户问题。要求：稳健、可执行；不编造官网信息；不承诺录取概率；涉及 deadline/NC/政策时提醒官网复核。\n\n${JSON.stringify({ question: body.message || body.question || body.prompt || '', profile: body.profile || {}, analysis: body.analysis || {}, demoSummary: { grade: demo.grade, matching: demo.matching?.slice?.(0, 3) } })}`;
+      const ai = await generateWithDeepSeek(prompt);
+      return res.status(200).json({ provider: ai.provider || 'deepseek-server-proxy', mode: ai.mode || 'fallback', answer: ai.ok ? ai.content : fallbackAnswer, warning: ai.ok ? undefined : '未配置或未接通 DeepSeek，当前返回演示 fallback。' });
     }
     return res.status(404).json({ error: `Unknown API path: ${path}` });
   } catch (error) {
