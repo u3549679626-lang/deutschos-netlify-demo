@@ -962,13 +962,17 @@ function QuestionCard({ question, activeRole, onReply, onStatus, onTransfer, onC
       {question.status !== 'closed' && <button className="ghost" onClick={() => onCloseByApplicant?.(question.id)}>关闭问题</button>}
     </div> : <div className="question-actions consultant-reply-workbench">
       <div className="reply-workbench-head">
-        <div><b>{activeRole === 'admin' ? '管理员处理意见' : '回复工作区'}</b><small>建议包含：判断依据、下一步动作、是否需要补充材料。</small></div>
+        <div>
+          <span className="reply-kicker">处理回复</span>
+          <b>{activeRole === 'admin' ? '管理员处理意见' : '回复工作区'}</b>
+          <small>建议写清判断依据、下一步动作，以及是否需要申请者补充材料。</small>
+        </div>
         <Status value={question.status === 'answered' ? '已回复' : '待回复'} />
       </div>
-      <label className="reply-composer"><span>给申请者的回复</span><textarea value={replyText} onChange={e => { setReplyText(e.target.value); if (replyNotice) setReplyNotice(''); }} placeholder="例如：我已根据课程匹配、APS 状态和目标项目要求复核。下一步请补充英文课程描述与语言成绩截图；顾问将继续核对官网硬性要求。" /></label>
-      <div className="reply-helper-grid"><span>依据：课程/材料/官网要求</span><span>下一步：补材料或继续复核</span><span>流转：申请者 / 管理员</span></div>
-      <div className="reply-action-bar">
-        <button className="primary" onClick={() => { if (replyText.trim()) { onReply?.(question.id, replyText.trim()); setReplyText(''); setReplyNotice('已回复申请者，并同步更新问题状态。'); } else { setReplyNotice('请先输入回复内容，再发送给申请者。'); } }}>回复申请者</button>
+      <label className="reply-composer"><span>给申请者的回复</span><textarea value={replyText} onChange={e => { setReplyText(e.target.value); if (replyNotice) setReplyNotice(''); }} placeholder="示例：已根据课程匹配、APS 状态和目标项目要求复核。下一步请补充英文课程描述与语言成绩截图；我会继续核对官网硬性要求并更新处理结果。" /></label>
+      <div className="reply-helper-grid"><span>依据：课程 / 材料 / 官网要求</span><span>下一步：补材料或继续复核</span><span>流转：申请者 / 管理员</span></div>
+      <div className="reply-action-bar" aria-label="问题处理操作">
+        <button className="primary reply-main-action" onClick={() => { if (replyText.trim()) { onReply?.(question.id, replyText.trim()); setReplyText(''); setReplyNotice('已回复申请者，并同步更新问题状态。'); } else { setReplyNotice('请先输入回复内容，再发送给申请者。'); } }}>回复申请者</button>
         <button className="secondary" onClick={() => { onStatus?.(question.id, 'answered'); setReplyNotice('已标记为已回复。'); }}>标记已回复</button>
         <button className="ghost" onClick={() => { onTransfer?.(question.id, question.targetRole === 'admin' ? 'consultant' : 'admin'); setReplyNotice(`已转交${question.targetRole === 'admin' ? '顾问' : '管理员'}继续处理。`); }}>转交{question.targetRole === 'admin' ? '顾问' : '管理员'}</button>
       </div>
