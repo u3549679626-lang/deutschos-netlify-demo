@@ -955,7 +955,7 @@ function QuestionCard({ question, activeRole, onReply, onStatus, onTransfer, onC
     <div className="question-replies">
       {replies.length ? replies.map((r, i) => <div className="reply-bubble" key={i}>
         <strong>{r.author || (r.role === 'admin' ? '管理员' : r.role === 'consultant' ? '顾问' : '申请者')}</strong>
-        <span>{r.content || r.text}</span>
+        <span>{r.content || r.text || r.message}</span>
       </div>) : <p className="muted small">暂未回复，系统会按问题类型分发给{targetLabel}处理。</p>}
     </div>
     {activeRole === 'student' ? <div className="question-actions">
