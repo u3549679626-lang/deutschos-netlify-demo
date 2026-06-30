@@ -436,7 +436,7 @@ const createInitialQuestions = () => ([
     createdAt: '2026-06-11 10:20',
     updatedAt: '2026-06-11 15:40',
     replies: [
-      { role: 'consultant', author: '顾问端', message: '会影响硬性学分核验。建议优先补充数学、统计、编程、专业核心课的英文课程描述，并在课程匹配说明中解释项目经历。', at: '2026-06-11 15:40' }
+      { role: 'consultant', author: '顾问回复', message: '会影响硬性学分核验。建议优先补充数学、统计、编程、专业核心课的英文课程描述，并在课程匹配说明中解释项目经历。', at: '2026-06-11 15:40' }
     ],
     internalNotes: '可关联课程匹配诊断与文书说明。',
   },
@@ -962,7 +962,7 @@ function QuestionCard({ question, activeRole, onReply, onStatus, onTransfer, onC
       {question.status !== 'closed' && <button className="ghost" onClick={() => onCloseByApplicant?.(question.id)}>关闭问题</button>}
     </div> : <div className="question-actions consultant-reply-workbench">
       <div className="reply-workbench-head">
-        <div><b>{activeRole === 'admin' ? '管理员处理意见' : '顾问端回复工作区'}</b><small>建议包含：判断依据、下一步动作、是否需要补充材料。</small></div>
+        <div><b>{activeRole === 'admin' ? '管理员处理意见' : '回复工作区'}</b><small>建议包含：判断依据、下一步动作、是否需要补充材料。</small></div>
         <Status value={question.status === 'answered' ? '已回复' : '待回复'} />
       </div>
       <label className="reply-composer"><span>给申请者的回复</span><textarea value={replyText} onChange={e => { setReplyText(e.target.value); if (replyNotice) setReplyNotice(''); }} placeholder="例如：我已根据课程匹配、APS 状态和目标项目要求复核。下一步请补充英文课程描述与语言成绩截图；顾问将继续核对官网硬性要求。" /></label>
@@ -1026,7 +1026,7 @@ function StaffQuestionInbox({ role, questions, setQuestions }) {
     ...q,
     status: '已回复',
     updatedAt: nowLabel(),
-    replies: [...(q.replies || []), { role, author: role === 'consultant' ? '顾问端' : '管理员端', message, at: nowLabel() }]
+    replies: [...(q.replies || []), { role, author: role === 'consultant' ? '顾问回复' : '管理员处理', message, at: nowLabel() }]
   } : q));
   const updateStatus = (id, status) => setQuestions(questions.map(q => q.id === id ? { ...q, status, updatedAt: nowLabel() } : q));
   const transfer = (id, targetRole) => setQuestions(questions.map(q => q.id === id ? {
