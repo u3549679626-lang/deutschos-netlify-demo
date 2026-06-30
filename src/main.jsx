@@ -1354,21 +1354,50 @@ function ConsultantApplicantSyncCard({ portalData, portalMode }) {
   const tasks = portalData?.tasks || [];
   const risks = portalData?.risks || [];
   const documents = portalData?.documents || [];
+  const generatedAt = loop?.generatedAt || portalData?.lastUpdated || portalData?.updatedAt;
   const generated = Boolean(loop || materials.length || tasks.length || risks.length || documents.length);
+  const [reviewStates, setReviewStates] = useState({});
+  const [decisionMessage, setDecisionMessage] = useState('');
   const reviewItems = [
-    { title: `复核 ${applicant.name || 'Demo Applicant'}：跨专业 / 课程匹配风险`, detail: risks.find(r => String(r.title || r.type || '').includes('课程'))?.suggestion || '检查数学、统计、编程与目标方向的课程学分是否支撑申请。', level: '高' },
-    { title: `复核 ${applicant.name || 'Demo Applicant'}：APS 风险`, detail: risks.find(r => String(r.title || r.type || '').includes('APS'))?.suggestion || `${applicant.apsStatus || portalData?.applicant?.apsStatus || 'APS 状态待确认'}，需确认是否已递交或预约。`, level: '高' },
-    { title: `复核 ${applicant.name || 'Demo Applicant'}：语言风险`, detail: risks.find(r => String(r.title || r.type || '').includes('语言'))?.suggestion || '确认 IELTS / TOEFL / 德语成绩是否满足每个项目硬性门槛。', level: '中' }
+    { id: 'course', title: `课程匹配与跨专业解释`, detail: risks.find(r => String(r.title || r.type || '').includes('课程'))?.suggestion || '检查数学、统计、编程与目标方向的课程学分是否支撑申请。', level: '高', evidence: '成绩单、课程描述、项目官网学分要求' },
+    { id: 'aps', title: `APS 与申请路径`, detail: risks.find(r => String(r.title || r.type || '').includes('APS'))?.suggestion || `${applicant.apsStatus || portalData?.applicant?.apsStatus || 'APS 状态待确认'}，需确认是否已递交或预约。`, level: '高', evidence: 'APS 状态、uni-assist/VPD/直申路径' },
+    { id: 'language', title: `语言门槛`, detail: risks.find(r => String(r.title || r.type || '').includes('语言'))?.suggestion || '确认 IELTS / TOEFL / 德语成绩是否满足每个项目硬性门槛。', level: '中', evidence: '语言成绩、项目 language requirements 页面' },
+    { id: 'documents', title: `文书与材料包`, detail: documents.length ? `已同步 ${documents.length} 份文书/材料，需要确认是否可展示给申请者。` : '当前未同步正式文书，建议先补 Motivation Letter、课程匹配说明或 CV。', level: documents.length ? '中' : '待补', evidence: '文书初稿、CV、课程匹配说明' }
   ];
-  return <section className="panel" data-nav="applicant-sync-review">
-    <div className="section-title"><div><h2>来自申请者端的新复核任务</h2><p className="muted">申请者生成方案后自动同步到顾问端；顾问需要把自动结果转化为可交付判断。</p></div><Status value={generated ? '已收到申请包' : '待申请者生成'} /></div>
+  const checkedCount = reviewItems.filter(item => reviewStates[item.id] === '已确认').length;
+  const blockedCount = reviewItems.filter(item => reviewStates[item.id] === '需退回补充').length;
+  const markItem = (id, status) => {
+    setReviewStates(prev => ({ ...prev, [id]: status }));
+    setDecisionMessage(`已将复核项标记为：${status}`);
+  };
+  const publishDecision = () => {
+    if (blockedCount > 0) {
+      setDecisionMessage(`仍有 ${blockedCount} 项需退回补充，请先处理后再发布。`);
+      return;
+    }
+    if (checkedCount < reviewItems.length) {
+      setDecisionMessage(`已确认 ${checkedCount}/${reviewItems.length} 项，建议全部确认后再发布给申请者。`);
+      return;
+    }
+    setDecisionMessage('顾问已确认全部复核项，可发布给申请者门户。');
+  };
+  const returnDecision = () => setDecisionMessage('已生成退回补充意见：请申请者优先补课程描述、APS 状态和语言成绩证明。');
+  return <section className="panel consultant-sync-review" data-nav="applicant-sync-review">
+    <div className="section-title"><div><h2>申请者同步复核台</h2><p className="muted">申请者生成方案后自动同步到顾问端；顾问在这里完成“收到申请包 → 逐项复核 → 发布 / 退回”的最小闭环。</p></div><Status value={generated ? '已收到申请包' : '待申请者生成'} /></div>
     <section className="grid-4 compact-grid">
       <article className="metric"><span>申请者</span><b>{applicant.name || 'Demo Applicant'}</b><small>{applicant.targetDirection || portalData?.applicant?.targetDirection || '目标方向待确认'}</small></article>
-      <article className="metric"><span>材料</span><b>{materials.length}</b><small>待补 / 待核验</small></article>
-      <article className="metric"><span>风险</span><b>{risks.length || reviewItems.length}</b><small>课程 / APS / 语言</small></article>
-      <article className="metric"><span>文书</span><b>{documents.length}</b><small>初稿待顾问审核</small></article>
+      <article className="metric"><span>同步时间</span><b>{generatedAt ? '已同步' : '待同步'}</b><small>{generatedAt ? new Date(generatedAt).toLocaleString('zh-CN', { hour12: false }) : `模式：${portalMode || 'localStorage'}`}</small></article>
+      <article className="metric"><span>复核进度</span><b>{checkedCount}/{reviewItems.length}</b><small>{blockedCount ? `${blockedCount} 项需退回补充` : '待逐项确认'}</small></article>
+      <article className="metric"><span>申请包内容</span><b>{materials.length + tasks.length + risks.length + documents.length}</b><small>{materials.length} 材料 · {risks.length || reviewItems.length} 风险 · {documents.length} 文书</small></article>
     </section>
-    <div className="responsive-table"><table><thead><tr><th>顾问复核项</th><th>关键依据</th><th>优先级</th><th>建议动作</th></tr></thead><tbody>{reviewItems.map(item => <tr key={item.title}><td><b>{item.title}</b><small>来源：申请者端生成包 · {portalMode || 'localStorage'}</small></td><td>{item.detail}</td><td><Status value={item.level} /></td><td>核对材料原件、课程描述和项目官网硬性要求后再发布给申请者。</td></tr>)}</tbody></table></div>
+    <div className="review-checklist">{reviewItems.map(item => <article className="review-item sync-review-item" key={item.id}>
+      <div><b>{item.title}</b><Status value={reviewStates[item.id] || item.level} /></div>
+      <p>{item.detail}</p>
+      <small>关键依据：{item.evidence} · 来源：申请者端生成包 · {portalMode || 'localStorage'}</small>
+      <div className="actions"><button className="secondary" onClick={() => markItem(item.id, '已确认')}>确认通过</button><button onClick={() => markItem(item.id, '需退回补充')}>退回补充</button><button onClick={() => markItem(item.id, '待人工官网复核')}>待官网复核</button></div>
+    </article>)}</div>
+    <div className="decision-bar"><div><b>顾问处理建议</b><p>全部确认后发布；若存在硬性材料或官网口径缺口，先退回申请者补充，不直接包装成录取判断。</p></div><div className="actions"><button className="primary" onClick={publishDecision}>确认并发布给申请者</button><button className="secondary" onClick={returnDecision}>生成退回补充意见</button></div></div>
+    {decisionMessage && <div className="success-msg">{decisionMessage}</div>}
     <p className="note">演示边界：当前为前端 Demo 同步，真实商用仍需接入数据库持久化、文件解析与官网核验队列。</p>
   </section>;
 }
