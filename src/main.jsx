@@ -750,9 +750,20 @@ function Login({ onLogin, authStatus }) {
 
 function Shell({ user, onLogout, children }) {
   const navMap = {
-    student: [['首页', 'home'], ['申请资料', 'profile'], ['问题反馈', 'questions'], ['项目推荐', 'projects'], ['任务/周报', 'tasks'], ['风险提醒', 'risks']],
-    consultant: [['首页', 'home'], ['问题收件箱', 'questions'], ['申请者', 'profile'], ['匹配结果', 'matching'], ['审核发布', 'review'], ['定时任务', 'tasks']],
-    admin: [['首页', 'home'], ['平台工单', 'tickets'], ['数据库', 'database'], ['权限', 'auth'], ['账号', 'accounts'], ['项目库', 'projects'], ['项目画像', 'requirement-profiles'], ['专家中心', 'expert-center']]
+    student: [
+      ['首页', 'home'], ['申请资料', 'profile'], ['问题反馈', 'questions'], ['项目推荐', 'projects'],
+      ['申请者完整闭环', 'applicant-loop'], ['任务/周报', 'tasks'], ['风险提醒', 'risks']
+    ],
+    consultant: [
+      ['首页', 'home'], ['问题收件箱', 'questions'], ['新复核任务', 'applicant-sync-review'], ['课程复核', 'course-review'],
+      ['申请者', 'profile'], ['匹配结果', 'matching'], ['多校看板', 'projects'], ['政策雷达', 'policy-radar'],
+      ['文书依据', 'writing'], ['JSON 同步', 'json-sync'], ['定时任务', 'scheduled-tasks'], ['审核发布', 'review']
+    ],
+    admin: [
+      ['首页', 'home'], ['专家中心', 'expert-center'], ['平台工单', 'tickets'], ['项目画像', 'requirement-profiles'],
+      ['三端闭环', 'three-role-loop'], ['数据库', 'database'], ['权限', 'auth'], ['账号', 'accounts'],
+      ['项目库', 'projects'], ['隐私商业化', 'commercialization']
+    ]
   };
   const jump = target => {
     const root = document.querySelector('.workspace');
@@ -848,7 +859,7 @@ function PrivacyCommercialBlock({ result = {} }) {
   const studentPackage = commercialization.studentPackage || ['申请诊断报告', '项目匹配建议', '课程缺口清单'];
   const consultantWorkspace = commercialization.consultantWorkspace || ['多学生管理', '项目库核验', '任务看板'];
 
-  return <section className="panel privacy-commercial-block" data-nav="commercial">
+  return <section className="panel privacy-commercial-block" data-nav="commercialization">
     <div className="section-title">
       <div>
         <span className="eyebrow">隐私合规 × 商业化边界</span>
@@ -868,7 +879,7 @@ function PrivacyCommercialBlock({ result = {} }) {
 
 function VerificationTable({ programs = [] }) {
   if (!programs.length) return null;
-  return <section className="panel"><div className="section-title"><div><h2>官网核验表 v0.4</h2><p className="muted">保留来源入口、抓取日期、核验状态和待人工复核标签；未确认信息不推断。</p></div></div><div className="responsive-table"><table><thead><tr><th>学校 / 项目</th><th>路径</th><th>APS / VPD</th><th>Deadline / NC</th><th>来源与状态</th></tr></thead><tbody>{programs.map(p => <tr key={p.id}><td><b>{p.university}</b><small>{p.programName} · {p.universityType}</small></td><td>{p.applicationPlatform}<small>{p.teachingLanguage} · {p.degreeType}</small></td><td>{p.apsRequired}<small>{p.vpdRequired}</small></td><td>{p.deadline}<small>{p.ncStatus}</small></td><td><a href={p.sourceUrl} target="_blank">官方入口</a><div className="tags"><Status value={p.verification?.status || '待人工复核'} /><Status value={p.confidence || 'medium'} /></div><small>{p.checkedAt?.slice(0, 10)}</small></td></tr>)}</tbody></table></div></section>;
+  return <section className="panel verification-table"><div className="section-title"><div><h2>官网核验表 v0.4</h2><p className="muted">保留来源入口、抓取日期、核验状态和待人工复核标签；未确认信息不推断。</p></div></div><div className="responsive-table"><table><thead><tr><th>学校 / 项目</th><th>路径</th><th>APS / VPD</th><th>Deadline / NC</th><th>来源与状态</th></tr></thead><tbody>{programs.map(p => <tr key={p.id}><td><b>{p.university}</b><small>{p.programName} · {p.universityType}</small></td><td>{p.applicationPlatform}<small>{p.teachingLanguage} · {p.degreeType}</small></td><td>{p.apsRequired}<small>{p.vpdRequired}</small></td><td>{p.deadline}<small>{p.ncStatus}</small></td><td><a href={p.sourceUrl} target="_blank">官方入口</a><div className="tags"><Status value={p.verification?.status || '待人工复核'} /><Status value={p.confidence || 'medium'} /></div><small>{p.checkedAt?.slice(0, 10)}</small></td></tr>)}</tbody></table></div></section>;
 }
 
 function CourseMatchingMatrix({ rows = [], engine, onRunDemo, highlight = false }) {
@@ -1143,7 +1154,7 @@ function ApplicantFullLoopPanel({ loop, onRegenerate }) {
     </div>
     <div className="responsive-table"><table><thead><tr><th>材料</th><th>状态</th><th>负责人</th><th>下一步</th></tr></thead><tbody>{(loop.materialsChecklist || []).map(item => <tr key={item.name}><td><b>{item.name}</b></td><td><Status value={item.status} /></td><td>{item.owner}</td><td>{item.action}</td></tr>)}</tbody></table></div>
     <div className="panel two-col nested"><div><h3>申请者待办</h3><div className="mini-table">{(loop.applicantTasks || []).map(task => <div key={task.title}><b>{task.title}</b><Status value={task.priority} /><small>{task.due} · {task.status}</small></div>)}</div></div><div><h3>风险与处理动作</h3>{(loop.riskRegister || []).map(risk => <div className="review-item" key={risk.item}><b>{risk.item}</b><Status value={risk.level} /><p>{risk.reason}</p><small>{risk.action}</small></div>)}</div></div>
-    <div className="cards">{(loop.documents || []).map(doc => <article className="review-item" key={doc.title}><div className="section-title"><div><b>{doc.title}</b><p className="muted">{doc.language} · {doc.status}</p></div><Status value="可复制" /></div><pre className="json-box">{doc.content}</pre></article>)}</div>
+    <div className="document-grid">{(loop.documents || []).map(doc => <article className="document-draft" key={doc.title}><div className="section-title"><div><b>{doc.title}</b><p className="muted">{doc.language} · {doc.status}</p></div><Status value="可复制" /></div><div className="document-body">{String(doc.content || '').split(/\n{2,}|\n/).filter(Boolean).map((para, idx) => <p key={idx}>{para}</p>)}</div></article>)}</div>
     <div className="science-notes"><h3>真实落地边界</h3><ol><li>当前材料、任务、风险和文书草稿已由本地资料真实生成，并可下载 JSON 申请包。</li><li>官网 deadline、VPD/uni-assist、NC、语言小分和 ECTS 要求还未实时抓取，必须由顾问复核或接入后端核验服务。</li><li>若未配置数据库，资料只保存在当前浏览器 localStorage，不能跨设备同步。</li></ol></div>
   </section>;
 }
@@ -1304,12 +1315,12 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
     </section>
     <section className="panel two-col" data-nav="profile"><div><h2>申请者列表</h2><div className="applicant-row"><b>{portalData.applicant.name}</b><Status value={portalData.applicant.currentStage} /><small>{portalData.applicant.targetDirection} · 进度 {portalData.applicant.progress}% · APS {portalData.applicant.apsStatus}</small></div></div><div><h2>计算结果</h2><p>德国制成绩：<b>{runResult?.grade?.value || '待运行'}</b></p><p>项目数量：<b>{runResult?.programs?.length || approvedPrograms.length}</b></p><p className="note">计算结果仍需顾问审核，不能直接等同录取判断。</p></div></section>
     <V04ResultPanel result={runResult} />
-    <CourseMatchingMatrix rows={runResult?.courseMatching || []} engine={runResult?.courseMatchingEngine} />
+    <div data-nav="course-review"><CourseMatchingMatrix rows={runResult?.courseMatching || []} engine={runResult?.courseMatchingEngine} /></div>
     <div data-nav="matching"><VerificationTable programs={runResult?.programs || []} /></div>
     {runResult?.dashboard?.length > 0 && <section className="panel" data-nav="projects"><h2>v0.4 多校作战看板</h2><div className="responsive-table"><table><thead><tr><th>项目</th><th>梯度</th><th>路径</th><th>阻塞项</th><th>下一步</th><th>优先级</th></tr></thead><tbody>{runResult.dashboard.map(r => <tr key={`${r.university}-${r.programName}`}><td><b>{r.university}</b><small>{r.programName}</small></td><td><Status value={r.tier} /></td><td>{r.applicationPath}<small>APS: {r.aps} · VPD: {r.vpd}</small></td><td>{r.blocker}</td><td>{r.nextStep}</td><td><Status value={r.priority} /></td></tr>)}</tbody></table></div></section>}
-    {runResult?.policyRadar && <section className="panel"><div className="section-title"><div><h2>政策雷达首次基线</h2><p className="muted">{runResult.policyRadar.systemTaskStatus}</p></div><Status value={runResult.policyRadar.frequency} /></div><div className="responsive-table"><table><thead><tr><th>项目</th><th>检查项</th><th>当前信息</th><th>影响</th><th>动作</th></tr></thead><tbody>{runResult.policyRadar.firstRun?.map(r => <tr key={`${r.university}-${r.programName}`}><td><b>{r.university}</b><small>{r.programName}</small></td><td>{r.checks}</td><td>{r.currentInfo}</td><td><Status value={r.impact} /></td><td>{r.suggestedAction}</td></tr>)}</tbody></table></div></section>}
-    {runResult?.writingSamples && <section className="panel two-col"><div><h2>文书辅助依据</h2><ul className="clean-list">{runResult.writingSamples.materialSources?.map(s => <li key={s}>{s}</li>)}</ul><p className="note">{runResult.writingSamples.noFabricationNotice}</p></div><div><h2>课程匹配说明片段</h2><p>{runResult.writingSamples.courseMatchStatement}</p></div></section>}
-    <section className="panel"><div className="section-title"><div><h2>小浣熊后台 JSON 同步入口</h2><p className="muted">标准链路：专家团/数据分析/定时任务在小浣熊后台完成 → 导出 JSON → 顾问粘贴 → 解析校验 → 审核发布 → 申请者门户展示。</p></div><button onClick={resetPublished}>恢复演示基线</button></div><textarea className="json-box" value={syncText} onChange={e => setSyncText(e.target.value)} />
+    {runResult?.policyRadar && <section className="panel" data-nav="policy-radar"><div className="section-title"><div><h2>政策雷达首次基线</h2><p className="muted">{runResult.policyRadar.systemTaskStatus}</p></div><Status value={runResult.policyRadar.frequency} /></div><div className="responsive-table"><table><thead><tr><th>项目</th><th>检查项</th><th>当前信息</th><th>影响</th><th>动作</th></tr></thead><tbody>{runResult.policyRadar.firstRun?.map(r => <tr key={`${r.university}-${r.programName}`}><td><b>{r.university}</b><small>{r.programName}</small></td><td>{r.checks}</td><td>{r.currentInfo}</td><td><Status value={r.impact} /></td><td>{r.suggestedAction}</td></tr>)}</tbody></table></div></section>}
+    {runResult?.writingSamples && <section className="panel two-col" data-nav="writing"><div><h2>文书辅助依据</h2><ul className="clean-list">{runResult.writingSamples.materialSources?.map(s => <li key={s}>{s}</li>)}</ul><p className="note">{runResult.writingSamples.noFabricationNotice}</p></div><div><h2>课程匹配说明片段</h2><p>{runResult.writingSamples.courseMatchStatement}</p></div></section>}
+    <section className="panel" data-nav="json-sync"><div className="section-title"><div><h2>小浣熊后台 JSON 同步入口</h2><p className="muted">标准链路：专家团/数据分析/定时任务在小浣熊后台完成 → 导出 JSON → 顾问粘贴 → 解析校验 → 审核发布 → 申请者门户展示。</p></div><button onClick={resetPublished}>恢复演示基线</button></div><textarea className="json-box" value={syncText} onChange={e => setSyncText(e.target.value)} />
       <div className="schema-help"><b>必备字段：</b><code>schemaVersion</code><code>applicantId</code><code>programs[]</code><code>tasks[]</code><code>weeklyReport.summary</code><code>expertOutputs[]</code></div>
       {syncErrors.length > 0 && <div className="error-list"><b>校验提示</b>{syncErrors.map(e => <p key={e}>{e}</p>)}</div>}
       {publishMessage && <div className="success-msg">{publishMessage}</div>}
@@ -1395,7 +1406,7 @@ function ScheduledTaskConnector({ setPortalData, setPortalMode }) {
     }
   };
   useEffect(() => { refreshTaskStatus(); }, []);
-  return <section className="panel">
+  return <section className="panel" data-nav="scheduled-tasks">
     <div className="section-title"><div><h2>定时任务包接入</h2><p className="muted">已识别 <b>deutschos-scheduled-tasks-bundle</b>。小浣熊平台定时任务无需重复创建；这里负责接收运行结果、映射为门户数据，并由顾问审核发布。</p></div><button onClick={refreshTaskStatus}>刷新接入状态</button></div>
     <section className="grid-4 compact-grid">
       <article className="metric"><span>任务包</span><b>{taskStatus?.bundle || 'deutschos-scheduled-tasks-bundle'}</b><small>小浣熊平台已创建</small></article>
