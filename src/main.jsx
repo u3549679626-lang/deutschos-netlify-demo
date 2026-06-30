@@ -707,6 +707,11 @@ function Login({ onLogin, authStatus }) {
     const targetPassword = account?.password || password;
     setLoading(true);
     setError('');
+    if (account) {
+      onLogin({ ...account, applicantId: account.role === 'student' ? 'app-001' : null, authMode: 'client-demo-account' });
+      setLoading(false);
+      return;
+    }
     try {
       const data = await api('/auth/login', { email: targetEmail, password: targetPassword });
       if (!data.ok) throw new Error(data.error || '登录失败');
