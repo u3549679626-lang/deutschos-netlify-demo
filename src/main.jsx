@@ -1294,6 +1294,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
   return <>
     <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button><button className="primary" onClick={publishSync}>顾问审核后发布</button><button className="secondary" onClick={refreshPortal}>从数据库/API刷新</button></>} />
     <StaffQuestionInbox role="consultant" questions={questions} setQuestions={setQuestions} />
+    <ConsultantApplicantSyncCard portalData={portalData} portalMode={portalMode} />
     <ConsultantCourseReviewPanel engine={runResult?.courseMatchingEngine} />
     <section className="grid-4">
       <article className="metric"><span>负责申请者</span><b>1</b><small>演示账号</small></article>
@@ -1319,6 +1320,33 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
   </>;
 }
 
+
+
+function ConsultantApplicantSyncCard({ portalData, portalMode }) {
+  const loop = portalData?.applicantLoop;
+  const applicant = loop?.applicantSnapshot || portalData?.applicant || {};
+  const materials = portalData?.materials || [];
+  const tasks = portalData?.tasks || [];
+  const risks = portalData?.risks || [];
+  const documents = portalData?.documents || [];
+  const generated = Boolean(loop || materials.length || tasks.length || risks.length || documents.length);
+  const reviewItems = [
+    { title: `复核 ${applicant.name || 'Demo Applicant'}：跨专业 / 课程匹配风险`, detail: risks.find(r => String(r.title || r.type || '').includes('课程'))?.suggestion || '检查数学、统计、编程与目标方向的课程学分是否支撑申请。', level: '高' },
+    { title: `复核 ${applicant.name || 'Demo Applicant'}：APS 风险`, detail: risks.find(r => String(r.title || r.type || '').includes('APS'))?.suggestion || `${applicant.apsStatus || portalData?.applicant?.apsStatus || 'APS 状态待确认'}，需确认是否已递交或预约。`, level: '高' },
+    { title: `复核 ${applicant.name || 'Demo Applicant'}：语言风险`, detail: risks.find(r => String(r.title || r.type || '').includes('语言'))?.suggestion || '确认 IELTS / TOEFL / 德语成绩是否满足每个项目硬性门槛。', level: '中' }
+  ];
+  return <section className="panel" data-nav="applicant-sync-review">
+    <div className="section-title"><div><h2>来自申请者端的新复核任务</h2><p className="muted">申请者生成方案后自动同步到顾问端；顾问需要把自动结果转化为可交付判断。</p></div><Status value={generated ? '已收到申请包' : '待申请者生成'} /></div>
+    <section className="grid-4 compact-grid">
+      <article className="metric"><span>申请者</span><b>{applicant.name || 'Demo Applicant'}</b><small>{applicant.targetDirection || portalData?.applicant?.targetDirection || '目标方向待确认'}</small></article>
+      <article className="metric"><span>材料</span><b>{materials.length}</b><small>待补 / 待核验</small></article>
+      <article className="metric"><span>风险</span><b>{risks.length || reviewItems.length}</b><small>课程 / APS / 语言</small></article>
+      <article className="metric"><span>文书</span><b>{documents.length}</b><small>初稿待顾问审核</small></article>
+    </section>
+    <div className="responsive-table"><table><thead><tr><th>顾问复核项</th><th>关键依据</th><th>优先级</th><th>建议动作</th></tr></thead><tbody>{reviewItems.map(item => <tr key={item.title}><td><b>{item.title}</b><small>来源：申请者端生成包 · {portalMode || 'localStorage'}</small></td><td>{item.detail}</td><td><Status value={item.level} /></td><td>核对材料原件、课程描述和项目官网硬性要求后再发布给申请者。</td></tr>)}</tbody></table></div>
+    <p className="note">演示边界：当前为前端 Demo 同步，真实商用仍需接入数据库持久化、文件解析与官网核验队列。</p>
+  </section>;
+}
 
 function ScheduledTaskConnector({ setPortalData, setPortalMode }) {
   const [taskStatus, setTaskStatus] = useState(null);
