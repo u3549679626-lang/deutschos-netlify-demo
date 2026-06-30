@@ -759,9 +759,8 @@ function Shell({ user, onLogout, navState = {}, children }) {
 
   const navMap = {
     student: [
-      ['首页', 'home'], ['申请资料', 'profile'], ['问题反馈', 'questions'],
-      ...(hasRunResult ? [['项目推荐', 'projects']] : []),
-      ...(hasApplicantLoop ? [['申请者完整闭环', 'applicant-loop'], ['任务/周报', 'tasks'], ['风险提醒', 'risks']] : [])
+      ['首页', 'home'], ['申请资料', 'profile'], ['问题反馈', 'questions'], ['项目推荐', 'projects'], ['任务/周报', 'tasks'], ['风险提醒', 'risks'],
+      ...(hasApplicantLoop ? [['申请者完整闭环', 'applicant-loop']] : [])
     ],
     consultant: [
       ['首页', 'home'], ['问题收件箱', 'questions'],
