@@ -123,6 +123,8 @@ const projectLibrary = [
 ];
 
 const storageKey = 'deutschos.publishedApplicant.v1';
+const sharedPortalStorageKey = 'deutschos.portalData.v1';
+const portalStorageKeys = [sharedPortalStorageKey, storageKey];
 const intakeStorageKey = 'deutschos.applicantIntake.v1';
 
 const createInitialProfile = () => ({
@@ -621,6 +623,7 @@ function mergePortalData(payload) {
     risks: payload.risks || [],
     weeklyReport: payload.weeklyReport || weeklyReport,
     expertOutputs: payload.expertOutputs || expertOutputs,
+    applicantLoop: payload.applicantLoop || null,
     consultantReview: {
       status: '顾问已审核并发布',
       reviewer: 'DeutschOS 顾问',
@@ -643,10 +646,39 @@ function validateSyncPayload(payload) {
   return errors;
 }
 
-function loadPublishedData() {
+function mergeIncomingPortalData(incoming = {}) {
+  const local = loadPublishedData(false);
+  return mergePortalData({
+    ...local,
+    ...incoming,
+    applicant: { ...(local.applicant || {}), ...(incoming.applicant || {}) },
+    materials: incoming.materials?.length ? incoming.materials : local.materials,
+    programs: incoming.programs?.length ? incoming.programs : local.programs,
+    tasks: incoming.tasks?.length ? incoming.tasks : local.tasks,
+    risks: incoming.risks?.length ? incoming.risks : local.risks,
+    weeklyReport: incoming.weeklyReport || local.weeklyReport,
+    expertOutputs: incoming.expertOutputs || local.expertOutputs,
+    applicantLoop: incoming.applicantLoop || local.applicantLoop || null,
+    source: incoming.source || local.source
+  });
+}
+
+function saveSharedPortalData(data) {
+  const normalized = mergeIncomingPortalData(data);
+  portalStorageKeys.forEach(key => localStorage.setItem(key, JSON.stringify(normalized)));
+  return normalized;
+}
+
+function loadPublishedData(mergeWithDefault = true) {
   try {
-    const raw = localStorage.getItem(storageKey);
-    return raw ? JSON.parse(raw) : defaultPortalData;
+    for (const key of portalStorageKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return mergeWithDefault ? mergePortalData({ ...defaultPortalData, ...parsed }) : parsed;
+      }
+    }
+    return defaultPortalData;
   } catch {
     return defaultPortalData;
   }
@@ -1354,8 +1386,11 @@ function ScheduledTaskConnector({ setPortalData, setPortalMode }) {
 function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQuestions, runResult, portalData, portalMode }) {
   const env = portalStatus?.environment || {};
   const actions = portalStatus?.requiredActions || [];
-  const syncStatus = portalData?.syncStatus;
-  const applicantSnapshot = portalData?.applicantSnapshot;
+  const loop = portalData?.applicantLoop;
+  const syncStatus = portalData?.syncStatus || loop?.syncStatus;
+  const applicantSnapshot = portalData?.applicantSnapshot || loop?.applicantSnapshot || portalData?.applicant;
+  const hasApplicantGeneratedData = Boolean((portalData?.materials?.length || 0) || (portalData?.tasks?.length || 0) || (portalData?.risks?.length || 0) || (portalData?.documents?.length || 0));
+  const applicantLoopReady = Boolean(syncStatus?.applicantReady || loop || hasApplicantGeneratedData);
   return <>
     <Header eyebrow="管理员后台" title="系统运营、专家团配置与 Supabase 接入诊断" desc="管理员维护三角色权限、项目库质量、专家团规则、每周一自动周报任务和数据库持久化配置。" actions={<button className="primary" onClick={refreshStatus}>刷新数据库状态</button>} />
     <ExpertCenterMapping />
@@ -1367,7 +1402,7 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
       <article className="metric"><span>数据库模式</span><b>{portalStatus?.mode || '检测中'}</b><small>{portalStatus?.supabaseConfigured ? 'Supabase 已配置' : '当前仍为 fallback / memory'}</small></article>
       <article className="metric"><span>同步方式</span><b>API</b><small>顾问发布 → Portal API → Supabase / fallback</small></article>
     </section>
-    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={syncStatus?.applicantReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{portalData?.materials?.length || 0}</b><small>申请者待补</small></article><article className="metric"><span>任务</span><b>{portalData?.tasks?.length || 0}</b><small>申请者 + 顾问</small></article><article className="metric"><span>风险</span><b>{portalData?.risks?.length || 0}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{portalData?.documents?.length || 0}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
+    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={applicantLoopReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{portalData?.materials?.length || 0}</b><small>申请者待补</small></article><article className="metric"><span>任务</span><b>{portalData?.tasks?.length || 0}</b><small>申请者 + 顾问</small></article><article className="metric"><span>风险</span><b>{portalData?.risks?.length || 0}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{portalData?.documents?.length || 0}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
     <section className="panel two-col" data-nav="database">
       <div>
         <h2>Supabase 配置诊断</h2>
@@ -1441,9 +1476,9 @@ function App() {
     try {
       const result = await api('/portal/read', { applicantId: user?.applicantId || 'app-001' });
       if (result.portalData) {
-        setPortalData(result.portalData);
+        const mergedPortal = saveSharedPortalData(result.portalData);
+        setPortalData(mergedPortal);
         setPortalMode(result.mode || 'api');
-        localStorage.setItem(storageKey, JSON.stringify(result.portalData));
       }
     } catch (error) {
       const fallback = loadPublishedData();
@@ -1476,8 +1511,8 @@ function App() {
     const applicantId = user?.applicantId || 'app-001';
     api('/portal/read', { applicantId }, { method: 'GET' }).then(data => {
       if (data?.portalData) {
-        setPortalData(data.portalData);
-        localStorage.setItem(storageKey, JSON.stringify(data.portalData));
+        const mergedPortal = saveSharedPortalData(data.portalData);
+        setPortalData(mergedPortal);
         setPortalMode(data.mode || 'api');
       }
     }).catch(() => setPortalMode('localStorage'));
@@ -1495,18 +1530,18 @@ function App() {
       const normalized = normalizeRunResult({ ...data, grade: data.grade || data.germanGrade, profile: activeProfile });
       const syncedPortal = mergeApplicantLoopIntoPortal(portalData, normalized, activeProfile);
       setRunResult(normalized);
-      setPortalData(syncedPortal);
+      const persistedPortal = saveSharedPortalData(syncedPortal);
+      setPortalData(persistedPortal);
       setPortalMode('localStorage-three-role-loop');
-      localStorage.setItem(storageKey, JSON.stringify(syncedPortal));
       setToast(normalized.ok ? `计算完成：德国制参考成绩 ${normalized.grade?.value} · 已同步顾问/管理者闭环` : '计算失败，请检查接口。');
     } catch (error) {
       console.warn('demo api fallback to local engine', error);
       const fallback = normalizeRunResult(buildLocalDemoResult(activeProfile));
       const syncedPortal = mergeApplicantLoopIntoPortal(portalData, fallback, activeProfile);
       setRunResult(fallback);
-      setPortalData(syncedPortal);
+      const persistedPortal = saveSharedPortalData(syncedPortal);
+      setPortalData(persistedPortal);
       setPortalMode('localStorage-three-role-loop');
-      localStorage.setItem(storageKey, JSON.stringify(syncedPortal));
       setToast('后端 API 暂不可用，已切换为本地演示引擎，并已同步顾问/管理者闭环。');
     }
   };
