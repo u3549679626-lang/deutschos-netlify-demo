@@ -226,7 +226,11 @@ export default async function handler(req, res) {
     if (path.startsWith('/scheduled-tasks')) {
       return handleScheduledTaskRequest(req, res, path);
     }
-    if (path === '/demo/run') return res.status(200).json(runFullDemo(body.profile || {}, body.programs || []));
+    if (path === '/demo/run') {
+      const demo = runFullDemo(body.profile || {}, body.programs || []);
+      const aiAdvice = await buildAiAdvice(body.profile || {}, demo.programs || body.programs || []);
+      return res.status(200).json({ ...demo, aiAdvice });
+    }
     if (path === '/policy-radar/run') return res.status(200).json(buildPolicyRadar(body.profile || {}, body.programs || []));
     if (path === '/efficiency-report') return res.status(200).json(buildEfficiencyReport());
     if (path === '/ai/health') return res.status(200).json(buildAiHealth());
