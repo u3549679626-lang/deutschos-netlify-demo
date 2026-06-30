@@ -814,17 +814,24 @@ function V04ResultPanel({ result }) {
   if (!result?.executiveSummary) return null;
   const summary = result.executiveSummary;
   const profile = result.applicantProfile || {};
+  const aiAdvice = result.aiAdvice || {};
+  const aiOnline = aiAdvice.mode === 'ai-env-proxy';
   return <section className="panel v04-panel">
     <div className="section-title"><div><h2>v0.4 MVP 工作台闭环</h2><p className="muted">从申请者画像、成绩换算、课程匹配到官网核验与政策雷达，统一输出可审核的申请工作台结果。</p></div><Status value={summary.version} /></div>
     <WorkflowStrip steps={summary.workflow || result.workflowSteps || []} />
     <div className="grid-4 compact">
       <article className="metric accent"><span>德国制成绩</span><b>{summary.germanGrade || result.grade?.value}</b><small>修正巴伐利亚公式参考值</small></article>
-      <article className="metric"><span>最高匹配</span><b>{summary.bestFit}</b><small>仍需官网逐项核验</small></article>
+      <article className="metric"><span>AI 引擎</span><b>{aiOnline ? 'DeepSeek' : '规则兜底'}</b><small>{aiOnline ? '服务端安全代理已接入' : '未接通时使用本地演示引擎'}</small></article>
       <article className="metric"><span>项目数量</span><b>{result.programs?.length || 0}</b><small>TU9 / 综合性大学 / FH-HAW</small></article>
       <article className="metric"><span>待人工复核</span><b>{result.programs?.filter(p => p.reviewRequired).length || 0} 项</b><small>deadline / NC / VPD / APS</small></article>
     </div>
+    <div className={`ai-status-card ${aiOnline ? 'online' : 'fallback'}`}>
+      <div><span>AI 状态</span><b>{aiOnline ? 'DeepSeek 已接入' : '本地规则兜底'}</b><small>{aiAdvice.provider || 'local-expert-engine'} · {aiAdvice.model || 'demo-rules'}</small></div>
+      <p>{aiOnline ? '生成方案已通过 Vercel 服务端代理调用 DeepSeek，API Key 不会暴露给浏览器。' : '当前仍可演示完整流程；配置 DEEPSEEK_API_KEY 后会自动切换为 DeepSeek。'}</p>
+    </div>
     <div className="two-col tight"><div><h3>申请者画像摘要</h3><ul className="clean-list"><li>{profile.education}</li><li>目标：{profile.targetDirection}</li><li>语言：{profile.language}</li><li>APS：{profile.apsStatus}</li></ul></div><div><h3>优先风险与下一步</h3><ul className="clean-list">{(summary.topRisks || []).map(r => <li key={r}>{r}</li>)}<li>{summary.nextAction}</li></ul></div></div>
     <p className="guardrail">{summary.guardrail}</p>
+    <p className="ai-safety-note">AI 建议仅作为申请辅助；deadline、NC、语言成绩、课程学分、APS/VPD 和申请路径必须以学校官网或官方申请平台最终信息为准。</p>
   </section>;
 }
 
