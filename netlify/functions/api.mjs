@@ -1,5 +1,6 @@
 import { runFullDemo, buildPolicyRadar, buildEfficiencyReport } from './demo-core.mjs';
 import { handlePortalRequest } from '../../server/portal-store.mjs';
+import { handleAuthRequest } from '../../server/auth-store.mjs';
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -16,6 +17,33 @@ function parseBody(event) {
   try { return event.body ? JSON.parse(event.body) : {}; } catch { return {}; }
 }
 
+async function handleNetlifyAuthRequest(event, path, body) {
+  return new Promise((resolve) => {
+    const headers = {};
+    const req = {
+      method: event.httpMethod,
+      headers: event.headers || {},
+      body
+    };
+    const res = {
+      statusCode: 200,
+      setHeader(key, value) {
+        headers[key] = value;
+      },
+      end(payload = '') {
+        resolve({
+          statusCode: this.statusCode || 200,
+          headers,
+          body: typeof payload === 'string' ? payload : JSON.stringify(payload)
+        });
+      }
+    };
+
+    Promise.resolve(handleAuthRequest(req, res, path.replace('/auth/', ''))).catch((error) => {
+      resolve(json(500, { ok: false, error: error.message || 'Auth request failed' }));
+    });
+  });
+}
 
 function buildFallbackAdvice(demo) {
   const top = demo.matching?.[0] || {};
@@ -111,6 +139,10 @@ export async function handler(event) {
 
     if (path.startsWith('/portal/')) {
       return handlePortalRequest({ method: event.httpMethod, path, body });
+    }
+
+    if (path.startsWith('/auth/')) {
+      return handleNetlifyAuthRequest(event, path, body);
     }
 
     if (path === '/demo/run') {
