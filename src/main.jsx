@@ -253,7 +253,11 @@ function normalizeCourseEngine(engine = {}) {
 function normalizeRunResult(result = {}) {
   const engine = normalizeCourseEngine(result.courseMatchingEngine || {});
   const matching = result.matching || result.courseMatching || [];
-  return { ...result, matching, courseMatching: result.courseMatching || matching, courseMatchingEngine: engine };
+  const normalized = { ...result, matching, courseMatching: result.courseMatching || matching, courseMatchingEngine: engine };
+  return {
+    ...normalized,
+    applicantLoop: normalized.applicantLoop || buildApplicantFullLoop(normalized.profile || loadIntakeProfile(), normalized)
+  };
 }
 
 function estimateGermanGrade(profile = {}) {
@@ -262,6 +266,60 @@ function estimateGermanGrade(profile = {}) {
   const pass = Number(profile.passScore);
   const grade = 1 + 3 * (max - average) / (max - pass);
   return Number.isFinite(grade) ? grade.toFixed(2) : '待计算';
+}
+
+
+function buildApplicantFullLoop(profile = createInitialProfile(), result = {}) {
+  const grade = estimateGermanGrade(profile);
+  const gradeValue = grade ? Number(grade) : null;
+  const needsAps = !String(profile.apsStatus || '').includes('已通过');
+  const needsLanguage = !profile.english || String(profile.english).includes('未') || String(profile.english).trim().length < 4;
+  const isCrossMajor = String(profile.crossMajor || '').includes('是') || String(profile.crossMajor || '').includes('跨');
+  const hasLowGrade = gradeValue ? gradeValue > 2.7 : false;
+  const materialsChecklist = [
+    { name: '成绩单 / 均分证明', status: profile.averageScore ? '已录入核心成绩，待上传正式文件' : '待补充', owner: '申请者', action: '上传中英文成绩单或学校盖章均分证明' },
+    { name: '课程描述 / 模块说明', status: isCrossMajor ? '高优先级待补充' : '待补充', owner: '申请者', action: '补数学、统计、编程、专业核心课描述，用于课程匹配说明' },
+    { name: '语言成绩', status: needsLanguage ? '待补充考试或官方成绩' : '已录入，待核对小分', owner: '申请者', action: '上传 IELTS/TOEFL/TestDaF/DSH 官方成绩单或考试计划' },
+    { name: 'APS 材料', status: needsAps ? '未闭环' : '已通过/待上传证明', owner: '申请者', action: '确认 APS 状态，整理审核材料与递交时间' },
+    { name: 'CV', status: '可生成初稿', owner: '申请者 + 顾问', action: '按德国申请格式补教育、项目、实习、技能和语言信息' },
+    { name: 'Motivation Letter 素材', status: '已生成素材框架', owner: '申请者', action: '补真实项目/实习/课程案例，避免模板化' },
+    { name: '推荐信', status: '待确认推荐人', owner: '申请者', action: '准备 1–2 位推荐人信息与沟通邮件' }
+  ];
+  const applicantTasks = [
+    { title: '上传或整理课程描述', owner: '申请者', due: '48 小时内', priority: isCrossMajor ? '高' : '中', status: '待处理' },
+    { title: '确认 APS 进度与材料清单', owner: '申请者', due: '本周内', priority: needsAps ? '高' : '低', status: needsAps ? '待处理' : '待上传证明' },
+    { title: '上传语言成绩或考试计划', owner: '申请者', due: '本周内', priority: needsLanguage ? '高' : '中', status: needsLanguage ? '待处理' : '待核验' },
+    { title: '补充 CV 与动机信真实经历素材', owner: '申请者', due: '3 天内', priority: '中', status: '待处理' },
+    { title: '确认 3 个初筛项目是否接受进入官网复核', owner: '申请者', due: '本周内', priority: '中', status: '待确认' }
+  ];
+  const riskRegister = [
+    isCrossMajor ? { level: '高', item: '跨专业/课程匹配风险', reason: '目标方向与本科专业存在差异，需用课程描述、项目经历和文书解释补强。', action: '优先补课程描述与课程匹配说明。' } : null,
+    needsAps ? { level: '高', item: 'APS 风险', reason: `当前 APS 状态为「${profile.apsStatus || '未提供'}」，可能影响德国申请节奏。`, action: '建立 APS 材料清单并确认递交计划。' } : null,
+    needsLanguage ? { level: '高', item: '语言风险', reason: '未录入有效语言成绩或缺官方证明。', action: '上传成绩单或制定最近考试计划。' } : null,
+    hasLowGrade ? { level: '中', item: '成绩竞争力风险', reason: `德国制参考成绩 ${grade}，部分 NC/高竞争项目需谨慎。`, action: '扩大匹配/稳妥项目，并强化经历与课程匹配。' } : { level: '中', item: '官网核验风险', reason: '当前项目要求仍为本地规则初筛，deadline、VPD、uni-assist、NC 未实时核验。', action: '进入顾问官网核验或接入后端抓取服务。' }
+  ].filter(Boolean);
+  const motivationDraft = `Dear Admissions Committee,
+
+I am ${profile.name || 'the applicant'}, currently studying ${profile.major || 'my undergraduate major'} at ${profile.university || 'my university'}. I am applying for a master's programme related to ${profile.targetDirection || 'my target field'} because my academic background and project interests have led me to focus on this area.
+
+My current average score is ${profile.averageScore || 'N/A'} out of ${profile.maxScore || 'N/A'}, with a German reference grade of ${grade || 'to be calculated'}. ${isCrossMajor ? 'Because my application involves a cross-disciplinary transition, I will use my course descriptions, project experience and motivation letter to explain the academic bridge clearly.' : 'My undergraduate coursework provides a relevant foundation for the target direction.'}
+
+At this stage, I understand that the programme requirements, deadlines and application path must be verified on the official university pages. I will therefore prepare course descriptions, language proof, APS-related materials and a programme-specific motivation letter before final submission.
+
+Sincerely,
+${profile.name || 'Applicant'}`;
+  const courseMatchingDraft = `课程匹配说明初稿：申请者本科专业为「${profile.major || '未填写'}」，目标方向为「${profile.targetDirection || '未填写'}」。当前德国制参考成绩为 ${grade || '待计算'}。建议将已修课程按数学/统计、计算机/编程、专业核心、项目实践、研究方法五类整理；跨专业或课程缺口部分应结合课程描述、项目经历、实习经历和补充学习计划说明。该说明为本地规则草稿，进入正式申请前必须结合目标项目官网 ECTS 要求逐项复核。`;
+  const nextActions = ['确认本次初筛项目是否进入顾问官网复核', '上传正式成绩单、课程描述、语言证明、APS 状态证明', '完善 CV / Motivation Letter 真实经历素材', '由顾问核验 deadline、申请路径、VPD/uni-assist/NC 与材料清单'];
+  return {
+    generatedAt: new Date().toISOString(), source: 'local-profile-rule-engine', grade,
+    materialsChecklist, applicantTasks, riskRegister,
+    documents: [
+      { title: 'Motivation Letter 初稿', language: 'EN', status: '本地规则草稿，待顾问润色', content: motivationDraft },
+      { title: '课程匹配说明初稿', language: 'ZH', status: '本地规则草稿，待官网 ECTS 复核', content: courseMatchingDraft }
+    ],
+    nextActions,
+    exportPayload: { applicant: profile, grade, programs: result.programs || [], matching: result.courseMatching || [], materialsChecklist, applicantTasks, riskRegister, documents: ['Motivation Letter 初稿', '课程匹配说明初稿'], limitations: ['项目官网、deadline、VPD/uni-assist、NC 仍需官方来源核验', '当前无数据库后端时仅使用浏览器 localStorage 保存', 'AI Key 不可用时文书为本地规则草稿'] }
+  };
 }
 
 function buildLocalDemoResult(profile = createInitialProfile()) {
@@ -318,7 +376,7 @@ function buildLocalDemoResult(profile = createInitialProfile()) {
       reviewRequired: true
     };
   });
-  return {
+  const localResult = {
     ok: true,
     applicant: { ...baseApplicant, ...p, germanGrade: gradeText },
     grade: {
@@ -344,6 +402,10 @@ function buildLocalDemoResult(profile = createInitialProfile()) {
     risks: weeklyReport.risks,
     tasks: weeklyTasks,
     generatedAt: new Date().toISOString()
+  };
+  return {
+    ...localResult,
+    applicantLoop: buildApplicantFullLoop(p, localResult)
   };
 }
 
@@ -801,7 +863,7 @@ function CourseMatchingMatrix({ rows = [], engine, onRunDemo, highlight = false 
       <div className="match-head"><div><span>{row.university || row.school}</span><h3>{row.programName || row.program}</h3><small>{row.requirementSource || row.source || 'Demo 要求画像'} · {row.checkedAt || '待官网复核'}</small></div><b>{row.matchScore ?? row.score ?? '待评估'}</b></div>
       <div className="tags"><Status value={row.tier || '项目梯度'} /><Status value={`风险：${row.riskLevel || row.risk || '待复核'}`} /><Status value={row.reviewStatus || '需顾问复核'} /></div>
       <p>{row.recommendation || row.explanation || row.decision || '系统将结合课程模块、项目画像和顾问复核形成最终申请建议。'}</p>
-      {row.moduleMatches?.length > 0 && <div className="responsive-table"><table><thead><tr><th>要求模块</th><th>要求学分</th><th>已匹配</th><th>匹配课程</th><th>状态</th><th>证据</th></tr></thead><tbody>{row.moduleMatches.map(m => <tr key={`${row.programId || row.programName}-${m.module}`}><td><b>{m.label || m.module}</b><small>{m.requirementType}</small></td><td>{m.requiredCredits}</td><td>{m.matchedCredits}</td><td>{m.matchedCourses?.join('、') || '暂无明确课程'}</td><td><Status value={m.status} /></td><td><small>{m.evidence}</small></td></tr>)}</tbody></table></div>}
+      {row.moduleMatches?.length > 0 && <div className="responsive-table"><table><thead><tr><th>要求模块</th><th>要求学分</th><th>已匹配</th><th>匹配课程</th><th>状态</th><th>证据</th></tr></thead><tbody>{row.moduleMatches.map(m => <tr key={`${row.programId || row.programName}-${m.module}`}><td><b>{m.label || m.module}</b><small>{m.requirementType}</small></td><td>{m.requiredCredits}</td><td>{m.matchedCredits}</td><td>{Array.isArray(m.matchedCourses) ? m.matchedCourses.join('、') : (m.matchedCourses || '暂无明确课程')}</td><td><Status value={m.status} /></td><td><small>{m.evidence}</small></td></tr>)}</tbody></table></div>}
       <div className="two-col tight"><div><h4>缺口模块</h4><ul className="clean-list">{(row.gapModules || (row.gaps ? String(row.gaps).split('、') : [])).map((g, i) => <li key={typeof g === 'string' ? g : `${g.module || 'gap'}-${i}`}>{typeof g === 'string' ? moduleLabel(g) : `${g.label || moduleLabel(g.module)}${g.gapCredits ? `（缺口 ${g.gapCredits} 学分）` : ''}`}</li>)}</ul></div><div><h4>补强建议</h4><ul className="clean-list">{(row.suggestions || ['补充课程描述、项目证明和跨专业解释材料，由顾问复核后发布。']).map(s => <li key={s}>{String(s).replace(/^([a-z]+)：/, (_, code) => `${moduleLabel(code)}：`)}</li>)}</ul></div></div>
     </article>)}
     {reviewQueue.length > 0 && <section className="review-queue"><h3>顾问复核队列</h3><div className="cards">{reviewQueue.map((item, index) => <article className="review-item" key={item.id || `${item.issue}-${index}`}><b>{item.title || item.issue}</b><Status value={item.priority} /><p>{item.reason}</p><small>{item.action || `${item.university || ''} ${item.program || ''}`}</small></article>)}</div></section>}
@@ -967,6 +1029,93 @@ function ApplicantIntakeSummary({ profile }) {
   return <section className="panel intake-summary" data-nav="profile"><div className="section-title"><div><h2>申请资料录入</h2><p className="muted">先录入申请者背景与上传材料，再生成成绩换算、课程匹配、项目推荐和申请看板。入口已固定在页面右上角“录入 / 上传资料”。</p></div><Status value="资料入口" /></div><div className="grid-4 compact"><article className="metric"><span>申请者</span><b>{profile.name || '待填写'}</b><small>{profile.university || '院校待填'} · {profile.major || '专业待填'}</small></article><article className="metric"><span>目标方向</span><b>{profile.targetDirection || '待填写'}</b><small>{profile.intake || '入学季待填'}</small></article><article className="metric"><span>成绩参数</span><b>{profile.averageScore || '-'} / {profile.maxScore || '-'}</b><small>及格线 {profile.passScore || '-'}</small></article><article className="metric"><span>已选材料</span><b>{profile.uploadedFiles?.length || 0} 份</b><small>成绩单、课程描述、CV、语言等</small></article></div></section>;
 }
 
+
+
+function mergeApplicantLoopIntoPortal(currentPortal = {}, result = {}, profile = createInitialProfile()) {
+  const loop = result.applicantLoop || buildApplicantFullLoop(profile, result);
+  const applicantName = profile.name || '申请者';
+  const generatedAt = loop.generatedAt || new Date().toISOString();
+  const loopTasks = (loop.applicantTasks || []).map((task, index) => ({
+    id: `app-loop-task-${index + 1}`,
+    task: task.title || task.task,
+    owner: task.owner || '申请者',
+    due: task.due || '本周内',
+    priority: task.priority || '中',
+    status: task.status || '待处理',
+    source: '申请者资料生成'
+  }));
+  const consultantTasks = (loop.riskRegister || []).map((risk, index) => ({
+    id: `consultant-review-${index + 1}`,
+    task: `复核${applicantName}：${risk.item}`,
+    owner: '顾问',
+    due: '24 小时内',
+    priority: risk.level === '高' ? '高' : '中',
+    status: '待顾问复核',
+    source: '申请者资料生成'
+  }));
+  const risks = (loop.riskRegister || []).map(risk => ({
+    type: risk.item,
+    level: risk.level,
+    description: risk.reason,
+    suggestedAction: risk.action,
+    visibleToApplicant: true,
+    source: '申请者资料生成',
+    generatedAt
+  }));
+  const materials = (loop.materialsChecklist || []).map(item => ({
+    name: item.name,
+    status: item.status,
+    note: item.action,
+    owner: item.owner,
+    source: '申请者资料生成'
+  }));
+  return {
+    ...currentPortal,
+    applicantSnapshot: { ...profile, generatedAt, grade: loop.grade },
+    materials,
+    tasks: [...loopTasks, ...consultantTasks],
+    risks,
+    documents: loop.documents || [],
+    lastGeneratedPackage: loop.exportPayload,
+    syncStatus: {
+      source: 'localStorage-three-role-loop',
+      generatedAt,
+      applicantReady: true,
+      consultantReviewPending: consultantTasks.length,
+      managerVisible: true,
+      limitations: loop.exportPayload?.limitations || []
+    }
+  };
+}
+
+function ApplicantFullLoopPanel({ loop, onRegenerate }) {
+  if (!loop) return <section className="panel"><div className="section-title"><div><h2>申请者闭环工作台</h2><p className="muted">录入资料后点击“用当前资料生成方案”，系统会生成材料清单、任务、风险、文书草稿和导出包。</p></div><button className="primary" onClick={onRegenerate}>立即生成</button></div></section>;
+  const downloadPackage = () => {
+    const blob = new Blob([JSON.stringify(loop.exportPayload || loop, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `deutschos-applicant-package-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+  return <section className="panel" data-nav="applicant-loop">
+    <div className="section-title"><div><h2>申请者完整闭环</h2><p className="muted">以下内容由当前申请者资料本地规则引擎生成，可直接作为顾问复核和正式申请准备清单。</p></div><div className="actions"><button className="secondary" onClick={onRegenerate}>重新生成</button><button className="primary" onClick={downloadPackage}>下载申请包 JSON</button></div></div>
+    <div className="grid-4 compact">
+      <article className="metric"><span>材料清单</span><b>{loop.materialsChecklist?.length || 0} 项</b><small>成绩单、课程描述、语言、APS、CV</small></article>
+      <article className="metric"><span>申请任务</span><b>{loop.applicantTasks?.length || 0} 项</b><small>按优先级给申请者执行</small></article>
+      <article className="metric"><span>风险提醒</span><b>{loop.riskRegister?.length || 0} 项</b><small>高风险优先补材料</small></article>
+      <article className="metric"><span>文书草稿</span><b>{loop.documents?.length || 0} 篇</b><small>本地规则草稿，待顾问润色</small></article>
+    </div>
+    <div className="responsive-table"><table><thead><tr><th>材料</th><th>状态</th><th>负责人</th><th>下一步</th></tr></thead><tbody>{(loop.materialsChecklist || []).map(item => <tr key={item.name}><td><b>{item.name}</b></td><td><Status value={item.status} /></td><td>{item.owner}</td><td>{item.action}</td></tr>)}</tbody></table></div>
+    <div className="panel two-col nested"><div><h3>申请者待办</h3><div className="mini-table">{(loop.applicantTasks || []).map(task => <div key={task.title}><b>{task.title}</b><Status value={task.priority} /><small>{task.due} · {task.status}</small></div>)}</div></div><div><h3>风险与处理动作</h3>{(loop.riskRegister || []).map(risk => <div className="review-item" key={risk.item}><b>{risk.item}</b><Status value={risk.level} /><p>{risk.reason}</p><small>{risk.action}</small></div>)}</div></div>
+    <div className="cards">{(loop.documents || []).map(doc => <article className="review-item" key={doc.title}><div className="section-title"><div><b>{doc.title}</b><p className="muted">{doc.language} · {doc.status}</p></div><Status value="可复制" /></div><pre className="json-box">{doc.content}</pre></article>)}</div>
+    <div className="science-notes"><h3>真实落地边界</h3><ol><li>当前材料、任务、风险和文书草稿已由本地资料真实生成，并可下载 JSON 申请包。</li><li>官网 deadline、VPD/uni-assist、NC、语言小分和 ECTS 要求还未实时抓取，必须由顾问复核或接入后端核验服务。</li><li>若未配置数据库，资料只保存在当前浏览器 localStorage，不能跨设备同步。</li></ol></div>
+  </section>;
+}
+
 function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakeProfile, setIntakeProfile, questions, setQuestions }) {
   const publishedApplicant = portalData.applicant;
   const generatedApplicant = runResult?.applicant || normalizeIntakeProfile(intakeProfile);
@@ -975,6 +1124,7 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
   const hasUserInput = Boolean(intakeProfile?.name || intakeProfile?.averageScore || intakeProfile?.targetDirection);
   const portalMaterials = portalData.materials || materials;
   const matchingRows = runResult?.matching || runResult?.courseMatching || [];
+  const applicantLoop = runResult?.applicantLoop;
   const generatedPrograms = (runResult?.programs || []).map((p, index) => {
     const match = matchingRows[index] || {};
     const gaps = match.gapModules || match.gaps || [];
@@ -986,7 +1136,7 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
       deadline: p.deadline || '待官网最终复核',
       path: p.applicationPath || p.path || '待官网/申请平台复核',
       risk: match.riskLevel || match.risk || p.risk || '待复核',
-      consultantNote: gaps.length ? `本次根据录入资料识别缺口：${gaps.join('；')}` : (match.recommendation || p.consultantNote || '根据当前录入资料生成，需顾问复核。')
+      consultantNote: Array.isArray(gaps) && gaps.length ? `本次根据录入资料识别缺口：${gaps.map(g => typeof g === 'string' ? g : (g.label || g.module || '待补强')).join('；')}` : (typeof gaps === 'string' && gaps ? `本次根据录入资料识别缺口：${gaps}` : (match.recommendation || p.consultantNote || '根据当前录入资料生成，需顾问复核。'))
     };
   });
   const portalPrograms = generatedPrograms.length ? generatedPrograms : (portalData.programs || approvedPrograms);
@@ -1013,6 +1163,7 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
       <article className="metric"><span>本次高风险</span><b>{matchingRows.filter(r => ['高', '极高'].includes(r.riskLevel || r.risk)).length || visibleRisks.filter(r => r.level === '高').length || 0} 项</b><small>根据当前资料初筛，需顾问复核</small></article>
     </section>
     <V04ResultPanel result={runResult} />
+    <ApplicantFullLoopPanel loop={applicantLoop} onRegenerate={() => onRunDemo(saveIntakeProfile(intakeProfile))} />
     <VerificationTable programs={runResult?.programs || []} />
     <section className="panel two-col">
       <div><h2>当前录入资料摘要</h2><div className="info-list">
@@ -1022,10 +1173,10 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
         <p><b>APS：</b><Status value={applicant.apsStatus || '待填写'} /></p>
         <p><b>经历：</b>{applicant.experiences || '待补充实习 / 科研 / 项目经历'}</p>
       </div></div>
-      <div><h2>材料状态</h2><div className="mini-table">{portalMaterials.map(m => <div key={m.name}><b>{m.name}</b><Status value={m.status} /><small>{m.note}</small></div>)}</div></div>
+      <div><h2>材料状态</h2><div className="mini-table">{(applicantLoop?.materialsChecklist || portalMaterials).map(m => <div key={m.name}><b>{m.name}</b><Status value={m.status} /><small>{m.action || m.note}</small></div>)}</div></div>
     </section>
     <section className="panel" data-nav="projects"><div className="section-title"><div><h2>{generatedPrograms.length ? '本次生成的申请项目初筛' : '顾问发布的申请项目'}</h2><p className="muted">{generatedPrograms.length ? '以下结果来自当前录入资料的实时计算，正式申请前仍需顾问与官网复核。' : '尚未基于当前资料生成，当前显示顾问发布/演示项目。'}</p></div><Status value={generatedPrograms.length ? '当前资料驱动' : '演示/发布版本'} /></div><div className="cards">{portalPrograms.map(p => <article className="program" key={`${p.university}-${p.program || p.programName}`}><div><span>{p.university}</span><h3>{p.program || p.programName}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>最近核验</dt><dd>{p.checkedAt || p.checkedDate || '待官网复核'}</dd><dt>来源入口</dt><dd>{p.source ? <a href={p.source} target="_blank">{p.source}</a> : <span>待补充官网来源</span>}</dd></dl></article>)}</div></section>
-    <section className="panel two-col" data-nav="tasks"><div><h2>本周我的任务</h2><TaskTable rows={portalTasks.filter(t => t.owner?.includes('申请者'))} /></div><div data-nav="risks"><h2>顾问发布的风险提醒</h2>{visibleRisks.length ? visibleRisks.map(r => <div className="review-item" key={`${r.type}-${r.description}`}><b>{r.type}</b><Status value={r.level} /><p>{r.description}</p><small>{r.suggestedAction}</small></div>) : <p className="muted">暂无新增用户可见风险。</p>}</div></section>
+    <section className="panel two-col" data-nav="tasks"><div><h2>本周我的任务</h2><TaskTable rows={(applicantLoop?.applicantTasks || portalTasks).filter(t => !t.owner || t.owner?.includes('申请者'))} /></div><div data-nav="risks"><h2>{applicantLoop ? '本次生成的风险提醒' : '顾问发布的风险提醒'}</h2>{applicantLoop?.riskRegister?.length ? applicantLoop.riskRegister.map(r => <div className="review-item" key={r.item}><b>{r.item}</b><Status value={r.level} /><p>{r.reason}</p><small>{r.action}</small></div>) : visibleRisks.length ? visibleRisks.map(r => <div className="review-item" key={`${r.type}-${r.description}`}><b>{r.type}</b><Status value={r.level} /><p>{r.description}</p><small>{r.suggestedAction}</small></div>) : <p className="muted">暂无新增用户可见风险。</p>}</div></section>
     <section className="panel two-col"><WeeklyReport applicantOnly report={portalReport} /><div><h2>已发布专家团结论</h2>{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
   </>;
 }
@@ -1200,9 +1351,11 @@ function ScheduledTaskConnector({ setPortalData, setPortalMode }) {
   </section>;
 }
 
-function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQuestions, runResult }) {
+function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQuestions, runResult, portalData, portalMode }) {
   const env = portalStatus?.environment || {};
   const actions = portalStatus?.requiredActions || [];
+  const syncStatus = portalData?.syncStatus;
+  const applicantSnapshot = portalData?.applicantSnapshot;
   return <>
     <Header eyebrow="管理员后台" title="系统运营、专家团配置与 Supabase 接入诊断" desc="管理员维护三角色权限、项目库质量、专家团规则、每周一自动周报任务和数据库持久化配置。" actions={<button className="primary" onClick={refreshStatus}>刷新数据库状态</button>} />
     <ExpertCenterMapping />
@@ -1214,6 +1367,7 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
       <article className="metric"><span>数据库模式</span><b>{portalStatus?.mode || '检测中'}</b><small>{portalStatus?.supabaseConfigured ? 'Supabase 已配置' : '当前仍为 fallback / memory'}</small></article>
       <article className="metric"><span>同步方式</span><b>API</b><small>顾问发布 → Portal API → Supabase / fallback</small></article>
     </section>
+    <section className="panel two-col" data-nav="three-role-loop"><div><h2>三端闭环状态</h2><div className="review-item"><b>申请者生成包</b><Status value={syncStatus?.applicantReady ? '已生成' : '待生成'} /><p>{applicantSnapshot ? `${applicantSnapshot.name || '申请者'} · ${applicantSnapshot.major || '专业待补'} → ${applicantSnapshot.targetDirection || '方向待补'} · 德国制 ${applicantSnapshot.grade || '待计算'}` : '申请者端尚未生成本次方案。'}</p><small>同步模式：{portalMode || syncStatus?.source || 'localStorage'}</small></div><div className="grid-4 compact"><article className="metric"><span>材料</span><b>{portalData?.materials?.length || 0}</b><small>申请者待补</small></article><article className="metric"><span>任务</span><b>{portalData?.tasks?.length || 0}</b><small>申请者 + 顾问</small></article><article className="metric"><span>风险</span><b>{portalData?.risks?.length || 0}</b><small>需复核</small></article><article className="metric"><span>文书</span><b>{portalData?.documents?.length || 0}</b><small>草稿待审核</small></article></div></div><div><h2>管理者下一步</h2><ol className="check-list"><li>查看顾问是否在 24 小时内完成风险复核。</li><li>检查申请者是否补齐成绩单、课程描述、语言和 APS 文件。</li><li>若进入商用，必须接入 Supabase 持久化、文件上传和官网核验队列。</li></ol></div></section>
     <section className="panel two-col" data-nav="database">
       <div>
         <h2>Supabase 配置诊断</h2>
@@ -1253,7 +1407,7 @@ function AdminConsole({ portalStatus, authStatus, refreshStatus, questions, setQ
 }
 
 function TaskTable({ rows }) {
-  return <table><thead><tr><th>任务</th><th>负责人</th><th>截止</th><th>优先级</th><th>状态</th></tr></thead><tbody>{rows.map(t => <tr key={t.title}><td>{t.title}</td><td>{t.owner}</td><td>{t.due}</td><td><Status value={t.priority} /></td><td><Status value={t.status} /></td></tr>)}</tbody></table>;
+  return <table><thead><tr><th>任务</th><th>负责人</th><th>截止</th><th>优先级</th><th>状态</th></tr></thead><tbody>{rows.map((t, index) => <tr key={t.id || t.title || t.task || index}><td>{t.title || t.task}</td><td>{t.owner}</td><td>{t.due}</td><td><Status value={t.priority} /></td><td><Status value={t.status} /></td></tr>)}</tbody></table>;
 }
 
 function WeeklyReport({ applicantOnly = false, report = weeklyReport }) {
@@ -1338,14 +1492,22 @@ function App() {
         experiences: `${activeProfile.experiences || ''}\n课程摘要：${activeProfile.courseSummary || ''}\n上传材料：${(activeProfile.uploadedFiles || []).map(f => `${f.bucket}:${f.name}`).join('；') || '未选择文件'}`
       };
       const data = await api('/demo/run', { profile: profileForRun });
-      const normalized = normalizeRunResult({ ...data, grade: data.grade || data.germanGrade });
+      const normalized = normalizeRunResult({ ...data, grade: data.grade || data.germanGrade, profile: activeProfile });
+      const syncedPortal = mergeApplicantLoopIntoPortal(portalData, normalized, activeProfile);
       setRunResult(normalized);
-      setToast(normalized.ok ? `计算完成：德国制参考成绩 ${normalized.grade?.value} · ${normalized.executiveSummary?.version || 'Demo'}` : '计算失败，请检查接口。');
+      setPortalData(syncedPortal);
+      setPortalMode('localStorage-three-role-loop');
+      localStorage.setItem(storageKey, JSON.stringify(syncedPortal));
+      setToast(normalized.ok ? `计算完成：德国制参考成绩 ${normalized.grade?.value} · 已同步顾问/管理者闭环` : '计算失败，请检查接口。');
     } catch (error) {
       console.warn('demo api fallback to local engine', error);
       const fallback = normalizeRunResult(buildLocalDemoResult(activeProfile));
+      const syncedPortal = mergeApplicantLoopIntoPortal(portalData, fallback, activeProfile);
       setRunResult(fallback);
-      setToast('后端 API 暂不可用，已切换为本地演示引擎并生成课程匹配方案。');
+      setPortalData(syncedPortal);
+      setPortalMode('localStorage-three-role-loop');
+      localStorage.setItem(storageKey, JSON.stringify(syncedPortal));
+      setToast('后端 API 暂不可用，已切换为本地演示引擎，并已同步顾问/管理者闭环。');
     }
   };
   if (!user) return <Login onLogin={setUser} authStatus={authStatus} />;
@@ -1353,7 +1515,7 @@ function App() {
     {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
     {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} portalMode={portalMode} intakeProfile={demoProfile} setIntakeProfile={setDemoProfile} questions={questions} setQuestions={setQuestions} />}
     {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} portalMode={portalMode} setPortalMode={setPortalMode} refreshPortal={refreshPortal} questions={questions} setQuestions={setQuestions} />}
-    {user.role === 'admin' && <AdminConsole portalStatus={portalStatus} authStatus={authStatus} refreshStatus={refreshStatus} questions={questions} setQuestions={setQuestions} runResult={runResult} />}
+    {user.role === 'admin' && <AdminConsole portalStatus={portalStatus} authStatus={authStatus} refreshStatus={refreshStatus} questions={questions} setQuestions={setQuestions} runResult={runResult} portalData={portalData} portalMode={portalMode} />}
   </Shell>;
 }
 
