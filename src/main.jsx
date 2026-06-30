@@ -939,6 +939,7 @@ function CourseMatchingMatrix({ rows = [], engine, onRunDemo, highlight = false 
 
 function QuestionCard({ question, activeRole, onReply, onStatus, onTransfer, onCloseByApplicant }) {
   const [replyText, setReplyText] = useState('');
+  const [replyNotice, setReplyNotice] = useState('');
   const replies = question.replies || [];
   const targetLabel = question.targetRole === 'admin' ? '管理员' : '顾问';
   const statusLabel = question.status === 'closed' ? '已关闭' : question.status === 'answered' ? '已回复' : '待处理';
@@ -959,13 +960,19 @@ function QuestionCard({ question, activeRole, onReply, onStatus, onTransfer, onC
     </div>
     {activeRole === 'student' ? <div className="question-actions">
       {question.status !== 'closed' && <button className="ghost" onClick={() => onCloseByApplicant?.(question.id)}>关闭问题</button>}
-    </div> : <div className="question-actions stacked-actions">
-      <textarea value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="输入给申请者的回复，说明依据、下一步和是否需要补充材料" />
-      <div className="button-row">
-        <button className="primary" onClick={() => { if (replyText.trim()) { onReply?.(question.id, replyText.trim()); setReplyText(''); } }}>回复申请者</button>
-        <button className="ghost" onClick={() => onStatus?.(question.id, 'answered')}>标记已回复</button>
-        <button className="ghost" onClick={() => onTransfer?.(question.id, question.targetRole === 'admin' ? 'consultant' : 'admin')}>转交{question.targetRole === 'admin' ? '顾问' : '管理员'}</button>
+    </div> : <div className="question-actions consultant-reply-workbench">
+      <div className="reply-workbench-head">
+        <div><b>{activeRole === 'admin' ? '管理员处理意见' : '顾问端回复工作区'}</b><small>建议包含：判断依据、下一步动作、是否需要补充材料。</small></div>
+        <Status value={question.status === 'answered' ? '已回复' : '待回复'} />
       </div>
+      <label className="reply-composer"><span>给申请者的回复</span><textarea value={replyText} onChange={e => { setReplyText(e.target.value); if (replyNotice) setReplyNotice(''); }} placeholder="例如：我已根据课程匹配、APS 状态和目标项目要求复核。下一步请补充英文课程描述与语言成绩截图；顾问将继续核对官网硬性要求。" /></label>
+      <div className="reply-helper-grid"><span>依据：课程/材料/官网要求</span><span>下一步：补材料或继续复核</span><span>流转：申请者 / 管理员</span></div>
+      <div className="reply-action-bar">
+        <button className="primary" onClick={() => { if (replyText.trim()) { onReply?.(question.id, replyText.trim()); setReplyText(''); setReplyNotice('已回复申请者，并同步更新问题状态。'); } else { setReplyNotice('请先输入回复内容，再发送给申请者。'); } }}>回复申请者</button>
+        <button className="secondary" onClick={() => { onStatus?.(question.id, 'answered'); setReplyNotice('已标记为已回复。'); }}>标记已回复</button>
+        <button className="ghost" onClick={() => { onTransfer?.(question.id, question.targetRole === 'admin' ? 'consultant' : 'admin'); setReplyNotice(`已转交${question.targetRole === 'admin' ? '顾问' : '管理员'}继续处理。`); }}>转交{question.targetRole === 'admin' ? '顾问' : '管理员'}</button>
+      </div>
+      {replyNotice && <div className="inline-feedback">{replyNotice}</div>}
     </div>}
   </article>;
 }
