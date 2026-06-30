@@ -56,7 +56,7 @@ DEEPSEEK_MODEL=deepseek-chat
 部署后访问：
 
 ```text
-https://deutschos-netlify-demo.vercel.app/api/ai/health
+https://deutschos-agent-demo.vercel.app/api/ai/health
 ```
 
 期望看到：

@@ -297,7 +297,7 @@ export function buildPolicyRadar(profile = {}, programs = demoPrograms) {
     taskName: `${profile.name || 'Demo Applicant'}-德国硕士政策雷达`,
     frequency: '每 3 天',
     createdAt: now(),
-    systemTaskStatus: 'Netlify Demo 已生成任务配置与首次运行样例；长期定时需部署到服务器或办公小浣熊定时任务模块',
+    systemTaskStatus: 'Vercel Demo 已生成任务配置与首次运行样例；长期定时需部署到服务器或办公小浣熊定时任务模块',
     trackedPages: programs.flatMap(p => [
       { university: p.university, programName: p.programName, pageType: 'program/admission', url: p.sourceUrl },
       { university: p.university, programName: p.programName, pageType: 'deadline/language/application procedure', url: p.sourceUrl }
@@ -387,7 +387,7 @@ export function runFullDemo(profile = {}, incomingPrograms = []) {
       title: '德国硕士申请初筛与材料管理工作台',
       positioning: '输入背景，生成申请梯度方案；输出推荐理由、风险证据与下一步任务。',
       mainConclusion: `参考德国制成绩 ${grade.value}；建议优先复核课程/ECTS、APS、语言和 deadline。`,
-      boundary: '当前为纯前端/Netlify Demo：成绩与评分为真实计算，项目要求为演示种子数据，提交前必须官网复核。'
+      boundary: '当前为 Vercel 在线 Demo：成绩与评分为真实计算，项目要求为演示种子数据，提交前必须官网复核。'
     },
     exportFiles: [
       'demo-result.json',

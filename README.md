@@ -19,15 +19,22 @@
 
 ## 2. 快速启动
 
-### 2.1 Netlify 公网部署
+### 2.1 Vercel 公网部署
 
-本版本已内置 Netlify 部署配置：
+当前正式演示名称建议使用：
 
-- `netlify.toml`
-- `netlify/functions/api.mjs`
-- `netlify/functions/demo-core.mjs`
+- 项目名：`deutschos-agent-demo`
+- 展示名：`DeutschOS 德国硕士申请 Agent Demo`
+- 推荐域名：`deutschos-agent-demo.vercel.app`
 
-部署到 Netlify 后，前端会调用相对路径 `/api/...`，再由 Netlify Redirect 转发到 Functions。详见 `NETLIFY-DEPLOY.md`。
+本版本已内置 Vercel Serverless API：
+
+- `api/index.js`
+- `server/*.mjs`
+
+部署到 Vercel 后，前端会调用相对路径 `/api/...`，由 Vercel Serverless Function 处理登录、门户状态、DeepSeek 代理、文书生成和 AI 顾问问答。
+
+> 说明：仓库中仍保留部分 Netlify 配置文件，仅作为历史兼容和回滚参考；当前正式演示以 Vercel 为准。
 
 ### 2.2 本地启动
 
