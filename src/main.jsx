@@ -748,21 +748,36 @@ function Login({ onLogin, authStatus }) {
   </>;
 }
 
-function Shell({ user, onLogout, children }) {
+function Shell({ user, onLogout, navState = {}, children }) {
+  const hasRunResult = Boolean(navState.hasRunResult);
+  const hasApplicantLoop = Boolean(navState.hasApplicantLoop);
+  const hasCourseReview = Boolean(navState.hasCourseReview);
+  const hasPrograms = Boolean(navState.hasPrograms);
+  const hasPolicyRadar = Boolean(navState.hasPolicyRadar);
+  const hasWriting = Boolean(navState.hasWriting);
+  const hasRequirementProfiles = Boolean(navState.hasRequirementProfiles);
+
   const navMap = {
     student: [
-      ['首页', 'home'], ['申请资料', 'profile'], ['问题反馈', 'questions'], ['项目推荐', 'projects'],
-      ['申请者完整闭环', 'applicant-loop'], ['任务/周报', 'tasks'], ['风险提醒', 'risks']
+      ['首页', 'home'], ['申请资料', 'profile'], ['问题反馈', 'questions'],
+      ...(hasRunResult ? [['项目推荐', 'projects']] : []),
+      ...(hasApplicantLoop ? [['申请者完整闭环', 'applicant-loop'], ['任务/周报', 'tasks'], ['风险提醒', 'risks']] : [])
     ],
     consultant: [
-      ['首页', 'home'], ['问题收件箱', 'questions'], ['新复核任务', 'applicant-sync-review'], ['课程复核', 'course-review'],
-      ['申请者', 'profile'], ['匹配结果', 'matching'], ['多校看板', 'projects'], ['政策雷达', 'policy-radar'],
-      ['文书依据', 'writing'], ['JSON 同步', 'json-sync'], ['定时任务', 'scheduled-tasks'], ['审核发布', 'review']
+      ['首页', 'home'], ['问题收件箱', 'questions'],
+      ...(hasApplicantLoop ? [['新复核任务', 'applicant-sync-review']] : []),
+      ...(hasCourseReview ? [['课程复核', 'course-review']] : []),
+      ['申请者', 'profile'],
+      ...(hasPrograms ? [['匹配结果', 'matching'], ['多校看板', 'projects']] : []),
+      ...(hasPolicyRadar ? [['政策雷达', 'policy-radar']] : []),
+      ...(hasWriting ? [['文书依据', 'writing']] : []),
+      ['JSON 同步', 'json-sync'], ['定时任务', 'scheduled-tasks'], ['审核发布', 'review']
     ],
     admin: [
-      ['首页', 'home'], ['专家中心', 'expert-center'], ['平台工单', 'tickets'], ['项目画像', 'requirement-profiles'],
-      ['三端闭环', 'three-role-loop'], ['数据库', 'database'], ['权限', 'auth'], ['账号', 'accounts'],
-      ['项目库', 'projects'], ['隐私商业化', 'commercialization']
+      ['首页', 'home'], ['专家中心', 'expert-center'], ['平台工单', 'tickets'],
+      ...(hasRequirementProfiles ? [['项目画像', 'requirement-profiles']] : []),
+      ...(hasApplicantLoop ? [['三端闭环', 'three-role-loop']] : []),
+      ['数据库', 'database'], ['权限', 'auth'], ['账号', 'accounts'], ['项目库', 'projects'], ['隐私商业化', 'commercialization']
     ]
   };
   const jump = target => {
@@ -1585,7 +1600,17 @@ function App() {
     }
   };
   if (!user) return <Login onLogin={setUser} authStatus={authStatus} />;
-  return <Shell user={user} onLogout={() => setUser(null)}>
+  const applicantLoop = portalData?.applicantLoop || runResult?.applicantLoop;
+  const navState = {
+    hasRunResult: Boolean(runResult),
+    hasApplicantLoop: Boolean(applicantLoop),
+    hasCourseReview: Boolean(runResult?.courseMatching?.length),
+    hasPrograms: Boolean(runResult?.programs?.length || runResult?.dashboard?.length),
+    hasPolicyRadar: Boolean(runResult?.policyRadar),
+    hasWriting: Boolean(runResult?.writingSamples),
+    hasRequirementProfiles: Boolean(runResult?.courseMatchingEngine?.requirementProfiles?.length)
+  };
+  return <Shell user={user} navState={navState} onLogout={() => setUser(null)}>
     {toast && <div className="toast">{toast}<button onClick={() => setToast('')}>×</button></div>}
     {user.role === 'student' && <StudentPortal runResult={runResult} onRunDemo={runDemo} portalData={portalData} portalMode={portalMode} intakeProfile={demoProfile} setIntakeProfile={setDemoProfile} questions={questions} setQuestions={setQuestions} />}
     {user.role === 'consultant' && <ConsultantWorkbench runResult={runResult} onRunDemo={runDemo} portalData={portalData} setPortalData={setPortalData} portalMode={portalMode} setPortalMode={setPortalMode} refreshPortal={refreshPortal} questions={questions} setQuestions={setQuestions} />}
