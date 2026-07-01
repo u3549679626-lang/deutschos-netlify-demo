@@ -18,6 +18,28 @@ const api = async (path, payload = {}, options = {}) => {
   return res.json();
 };
 
+
+const l1ExpertTemplates = [
+  { id: 'student_profile', title: '申请者画像专家', goal: '根据申请者基础信息、成绩、语言、APS、经历和目标方向，生成德国硕士申请画像。', output: ['教育背景摘要', '申请优势', '主要风险', '待补充材料', '顾问跟进建议'] },
+  { id: 'grade_course', title: '成绩换算与课程匹配专家', goal: '使用修正巴伐利亚公式换算德国制成绩，并诊断课程模块是否支撑目标方向。', output: ['德国制参考成绩与计算过程', '数学/统计/计算机/专业核心课匹配', '缺口模块', '风险等级', '补强建议'] },
+  { id: 'project_risk', title: '项目核验与申请风控专家', goal: '围绕目标项目核验官网要求、申请路径、APS/VPD/uni-assist、deadline、语言与 NC 风险。', output: ['项目核验表', '申请路径判断', '高风险事项', '待人工核实字段', '来源链接与抓取日期'] },
+  { id: 'writing_task', title: '文书与任务看板专家', goal: '基于真实经历生成文书草稿和申请待办，不编造实习、科研、获奖或项目经历。', output: ['Motivation Letter/课程匹配说明片段', '本周任务', '阻塞项', '申请者可见说明', '顾问备注'] }
+];
+
+function parseL1MarkdownSections(markdown) {
+  const sections = {};
+  const text = String(markdown || '').replace(/\r\n/g, '\n');
+  const regex = /^##\s+(.+)$/gm;
+  const matches = [...text.matchAll(regex)];
+  matches.forEach((match, index) => {
+    const title = match[1].trim();
+    const start = match.index + match[0].length;
+    const end = index + 1 < matches.length ? matches[index + 1].index : text.length;
+    sections[title] = text.slice(start, end).trim();
+  });
+  return sections;
+}
+
 const accounts = [
   { role: 'student', label: '申请者', email: 'student@demo.com', password: 'demo123', name: 'Demo Applicant' },
   { role: 'consultant', label: '顾问', email: 'consultant@demo.com', password: 'demo123', name: 'DeutschOS 顾问' },
@@ -624,6 +646,7 @@ function mergePortalData(payload) {
     weeklyReport: payload.weeklyReport || weeklyReport,
     expertOutputs: payload.expertOutputs || expertOutputs,
     applicantLoop: payload.applicantLoop || null,
+    l1ExpertBridge: payload.l1ExpertBridge || null,
     consultantReview: payload.consultantReview ? {
       status: payload.consultantReview.status || payload.consultantReview.decision || '顾问已审核并发布',
       decision: payload.consultantReview.decision || payload.consultantReview.status || '顾问已审核并发布',
@@ -639,6 +662,91 @@ function mergePortalData(payload) {
     } : null,
     source: payload.source || { system: '手动同步', generatedAt: new Date().toISOString() }
   };
+}
+
+
+function buildL1ExpertTaskPack(portalData, runResult) {
+  const applicant = { ...(portalData?.applicant || {}), ...(runResult?.applicant || {}) };
+  const gradeValue = runResult?.grade?.value || estimateGermanGrade(applicant) || applicant.germanGrade || '待计算';
+  const programs = runResult?.programs?.length ? runResult.programs : (portalData?.programs || approvedPrograms);
+  const courses = runResult?.courseMatching || [];
+  const risks = portalData?.risks || [];
+  const materialsList = portalData?.materials?.length ? portalData.materials : materials;
+  const lines = [
+    '【DeutschOS × 办公小浣熊专家团｜L1 顾问中转式任务包】',
+    '',
+    '【接入边界】',
+    '当前为顾问中转式半自动接入：顾问将本任务包录入办公小浣熊专家团执行，专家输出经顾问复核后再回填 DeutschOS 并发布给申请者。不得表述为已 API 自动接入。',
+    '',
+    '【申请者信息】',
+    `姓名：${applicant.name || '待填写'}`,
+    `本科院校：${applicant.university || '待填写'}`,
+    `本科专业：${applicant.major || '待填写'}`,
+    `目标方向：${applicant.targetDirection || '待填写'}`,
+    `跨专业情况：${applicant.crossMajor || '待填写'}`,
+    `申请入学季：${applicant.intake || '待填写'}`,
+    `均分/满分/及格线：${applicant.averageScore || '-'} / ${applicant.maxScore || '-'} / ${applicant.passScore || applicant.passingScore || '-'}`,
+    `德国制参考成绩：${gradeValue}`,
+    `语言：${applicant.english || '英语待填'}；${applicant.german || '德语待填'}`,
+    `APS：${applicant.apsStatus || '待填写'}`,
+    `经历素材：${applicant.experiences || '待补充'}`,
+    '',
+    '【已上传/已登记材料】',
+    ...materialsList.map(m => `- ${m.name || m.type || '材料'}：${m.status || '待确认'}；${m.note || m.action || '无备注'}`),
+    '',
+    '【目标项目/初筛项目】',
+    ...(programs.length ? programs.map(p => `- ${p.university || p.school || '学校待填'}｜${p.program || p.programName || '项目待填'}｜路径：${p.path || p.applicationPath || '待官网复核'}｜Deadline：${p.deadline || '待官网复核'}｜来源：${p.source || p.url || '待补充官网来源'}`) : ['- 暂无目标项目，请先补充 3–5 个候选项目或由专家给出候选建议。']),
+    '',
+    '【已知课程匹配初筛】',
+    ...(courses.length ? courses.map(r => `- ${r.university || r.programName || '项目'}：匹配分 ${r.matchScore || '-'}；风险 ${r.riskLevel || r.risk || '待判断'}`) : ['- 暂无课程匹配结果，请按成绩单和课程描述重新诊断。']),
+    '',
+    '【已知风险】',
+    ...(risks.length ? risks.map(r => `- ${r.level || '风险'}：${r.title || r.name || r.type || '风险项'}；${r.action || r.note || r.suggestedAction || '待顾问处理'}`) : ['- 暂无风险清单，请专家根据申请路径、课程缺口和 deadline 补充。']),
+    '',
+    '【请调用以下专家并按固定结构输出】'
+  ];
+  l1ExpertTemplates.forEach((item, idx) => {
+    lines.push('', `### ${idx + 1}. ${item.title}`, `执行目标：${item.goal}`, '输出必须包含：', ...item.output.map(o => `- ${o}`));
+  });
+  lines.push('', '【统一输出格式要求】', '请输出结构化 Markdown，并严格使用以下一级标题：', '## 申请者画像', '## 成绩与课程匹配', '## 项目核验与风险', '## 文书与任务建议', '## 待人工复核', '', '要求：', '- 不得编造申请者经历、项目要求或录取概率。', '- 官网、deadline、语言、NC、VPD/uni-assist 信息必须标注来源链接和抓取日期；无法确认则写“待人工核实”。', '- 文书内容只能基于申请者真实素材；缺材料处写“待补充”。', '- 最后给出“可发布给申请者的摘要”和“仅顾问可见的内部风险”。');
+  return lines.join('\n');
+}
+
+function createL1PortalResult(rawText, previousPortalData = {}) {
+  const now = new Date().toISOString();
+  const safeText = String(rawText || '').trim();
+  const sections = parseL1MarkdownSections(safeText);
+  const expertOutputs = [
+    { expert: '申请者画像专家', status: '顾问确认版', result: sections['申请者画像'] || '已回填专家输出，顾问需补充分段内容。', visible: true },
+    { expert: '成绩与课程匹配专家', status: '顾问确认版', result: sections['成绩与课程匹配'] || '已回填成绩与课程匹配结果，待顾问最终确认。', visible: true },
+    { expert: '项目核验与风险专家', status: '顾问确认版', result: sections['项目核验与风险'] || '已回填项目核验与风险结论，官网字段需保留来源与抓取日期。', visible: true },
+    { expert: '文书与任务看板专家', status: '顾问确认版', result: sections['文书与任务建议'] || '已回填文书与任务建议，申请者端仅显示顾问发布版。', visible: true }
+  ];
+  return mergePortalData({
+    ...previousPortalData,
+    expertOutputs,
+    consultantReview: {
+      decision: 'L1 专家团结果已回填并发布',
+      status: '顾问确认版',
+      message: '顾问已将办公小浣熊专家团输出回填 DeutschOS；申请者端显示的是复核发布版，不是未经审核的 AI 原始输出。',
+      updatedAt: now,
+      reviewer: '顾问演示账号',
+      l1Mode: '顾问中转式专家接入'
+    },
+    l1ExpertBridge: {
+      mode: 'L1 顾问中转式专家接入',
+      status: '已回填并发布',
+      updatedAt: now,
+      rawResult: safeText,
+      sections,
+      boundary: '非 API 自动接入；由顾问录入办公小浣熊专家团、复核、回填并发布。'
+    },
+    weeklyReport: {
+      ...(previousPortalData.weeklyReport || weeklyReport),
+      summary: sections['申请者画像'] ? sections['申请者画像'].slice(0, 180) : (previousPortalData.weeklyReport?.summary || '已完成 L1 专家团结果回填。'),
+      updatedAt: now
+    }
+  });
 }
 
 function validateSyncPayload(payload) {
@@ -667,6 +775,7 @@ function mergeIncomingPortalData(incoming = {}) {
     expertOutputs: incoming.expertOutputs || local.expertOutputs,
     applicantLoop: incoming.applicantLoop || local.applicantLoop || null,
     consultantReview: incoming.consultantReview || local.consultantReview || null,
+    l1ExpertBridge: incoming.l1ExpertBridge || local.l1ExpertBridge || null,
     source: incoming.source || local.source
   });
 }
@@ -1243,6 +1352,7 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
     <section className="sync-banner">
       <b>本次生成状态：{runResult?.generatedAt ? '已根据当前录入资料生成方案' : hasUserInput ? '已录入资料，等待生成方案' : '尚未录入资料'}</b>
       <span>顾问发布版本：{portalData.consultantReview?.status || '顾问已发布版本'} · 当前资料：{hasUserInput ? '来自申请者录入' : '未录入，显示演示占位'} · 生成时间：{runResult?.generatedAt ? new Date(runResult.generatedAt).toLocaleString('zh-CN', { hour12: false }) : '待生成'}</span>
+      {portalData.l1ExpertBridge && <span className="l1-stamp">{portalData.l1ExpertBridge.mode} · {portalData.l1ExpertBridge.status} · 申请者端展示顾问确认版</span>}
     </section>
     <section className="grid-4">
       <article className="metric"><span>申请者</span><b>{applicant.name || '待填写'}</b><small>{applicant.university || '院校待填'} · {applicant.major || '专业待填'}</small></article>
@@ -1265,7 +1375,7 @@ function StudentPortal({ runResult, onRunDemo, portalData, portalMode, intakePro
     </section>
     <section className="panel" data-nav="projects"><div className="section-title"><div><h2>{generatedPrograms.length ? '本次生成的申请项目初筛' : '顾问发布的申请项目'}</h2><p className="muted">{generatedPrograms.length ? '以下结果来自当前录入资料的实时计算，正式申请前仍需顾问与官网复核。' : '尚未基于当前资料生成，当前显示顾问发布/演示项目。'}</p></div><Status value={generatedPrograms.length ? '当前资料驱动' : '演示/发布版本'} /></div><div className="cards">{portalPrograms.map(p => <article className="program" key={`${p.university}-${p.program || p.programName}`}><div><span>{p.university}</span><h3>{p.program || p.programName}</h3></div><div className="tags"><Status value={p.tier} /><Status value={p.status} /><Status value={`风险：${p.risk}`} /></div><p>{p.consultantNote}</p><dl><dt>Deadline</dt><dd>{p.deadline}</dd><dt>申请路径</dt><dd>{p.path}</dd><dt>最近核验</dt><dd>{p.checkedAt || p.checkedDate || '待官网复核'}</dd><dt>来源入口</dt><dd>{p.source ? <a href={p.source} target="_blank">{p.source}</a> : <span>待补充官网来源</span>}</dd></dl></article>)}</div></section>
     <section className="panel two-col" data-nav="tasks"><div><h2>本周我的任务</h2><TaskTable rows={(applicantLoop?.applicantTasks || portalTasks).filter(t => !t.owner || t.owner?.includes('申请者'))} /></div><div data-nav="risks"><h2>{applicantLoop ? '本次生成的风险提醒' : '顾问发布的风险提醒'}</h2>{applicantLoop?.riskRegister?.length ? applicantLoop.riskRegister.map(r => <div className="review-item" key={r.item}><b>{r.item}</b><Status value={r.level} /><p>{r.reason}</p><small>{r.action}</small></div>) : visibleRisks.length ? visibleRisks.map(r => <div className="review-item" key={`${r.type}-${r.description}`}><b>{r.type}</b><Status value={r.level} /><p>{r.description}</p><small>{r.suggestedAction}</small></div>) : <p className="muted">暂无新增用户可见风险。</p>}</div></section>
-    <section className="panel two-col"><WeeklyReport applicantOnly report={portalReport} /><div><h2>已发布专家团结论</h2>{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
+    <section className="panel two-col"><WeeklyReport applicantOnly report={portalReport} /><div><h2>已发布专家团结论</h2>{portalData.l1ExpertBridge && <p className="muted">以下内容由顾问从办公小浣熊专家团回填并复核发布；当前不是 API 自动接入结果。</p>}{visibleOutputs.map(o => <div className="review-item" key={o.expert}><b>{o.expert}</b><Status value={o.status} /><p>{o.result}</p></div>)}</div></section>
   </>;
 }
 
@@ -1350,6 +1460,7 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
   return <>
     <Header eyebrow="顾问工作台" title="小浣熊后台输出审核与发布中心" desc="顾问负责把小浣熊专家团、数据分析和每周定时任务的结果转化为可交付版本；申请者前台只展示审核后的内容。" actions={<><button className="primary" onClick={onRunDemo}>运行成绩/匹配计算</button><button className="secondary" onClick={parseSync}>解析后台 JSON</button><button className="primary" onClick={publishSync}>顾问审核后发布</button><button className="secondary" onClick={refreshPortal}>从数据库/API刷新</button></>} />
     <StaffQuestionInbox role="consultant" questions={questions} setQuestions={setQuestions} />
+    <ConsultantL1ExpertBridge portalData={portalData} setPortalData={setPortalData} setPortalMode={setPortalMode} runResult={runResult} />
     <ConsultantApplicantSyncCard portalData={portalData} setPortalData={setPortalData} setPortalMode={setPortalMode} portalMode={portalMode} />
     <ConsultantCourseReviewPanel engine={runResult?.courseMatchingEngine} />
     <section className="grid-4">
@@ -1377,6 +1488,60 @@ function ConsultantWorkbench({ onRunDemo, runResult, portalData, setPortalData, 
 }
 
 
+
+
+function ConsultantL1ExpertBridge({ portalData, setPortalData, setPortalMode, runResult }) {
+  const [taskPack, setTaskPack] = useState('');
+  const [expertResult, setExpertResult] = useState('');
+  const [message, setMessage] = useState('');
+  const sections = parseL1MarkdownSections(expertResult);
+  const generateTaskPack = () => {
+    const pack = buildL1ExpertTaskPack(portalData, runResult);
+    setTaskPack(pack);
+    setMessage('已生成 L1 小浣熊专家团任务包，可复制到办公小浣熊专家团运行。');
+  };
+  const copyTaskPack = async () => {
+    const pack = taskPack || buildL1ExpertTaskPack(portalData, runResult);
+    setTaskPack(pack);
+    try {
+      await navigator.clipboard.writeText(pack);
+      setMessage('任务包已复制。请在办公小浣熊专家团中运行，完成后将结果粘贴回这里。');
+    } catch {
+      setMessage('当前浏览器不允许自动复制，请手动选中文本复制。');
+    }
+  };
+  const publishResult = () => {
+    if (!expertResult.trim()) {
+      setMessage('请先粘贴办公小浣熊专家团输出结果。');
+      return;
+    }
+    const nextData = saveSharedPortalData(createL1PortalResult(expertResult, portalData));
+    setPortalData(nextData);
+    setPortalMode('synced');
+    setMessage('已保存为顾问确认版，并映射到申请者端。');
+  };
+  return <section className="panel l1-bridge" data-nav="l1-bridge">
+    <div className="section-title"><div><h2>L1 顾问中转式专家接入</h2><p className="muted">适用于未开放 API 的当前阶段：顾问读取申请者资料 → 生成任务包 → 录入办公小浣熊专家团 → 回填输出 → 复核发布到申请者端。</p></div><Status value="非 API 自动接入" /></div>
+    <div className="l1-flow"><span>申请者资料</span><b>→</b><span>顾问任务包</span><b>→</b><span>小浣熊专家团</span><b>→</b><span>顾问回填复核</span><b>→</b><span>申请者端发布</span></div>
+    <div className="two-col bridge-grid">
+      <div>
+        <h3>1. 生成专家任务包</h3>
+        <p className="muted">任务包会自动带入申请者资料、材料状态、目标项目、已知风险和固定输出格式。</p>
+        <div className="button-row"><button className="primary" onClick={generateTaskPack}>生成任务包</button><button className="secondary" onClick={copyTaskPack}>一键复制</button></div>
+        <textarea className="task-pack-box" value={taskPack} onChange={e => setTaskPack(e.target.value)} placeholder="点击“生成任务包”后，这里会出现可复制到办公小浣熊专家团的标准化任务包。" />
+      </div>
+      <div>
+        <h3>2. 回填专家输出并发布</h3>
+        <p className="muted">请粘贴办公小浣熊专家团输出，建议包含 ## 申请者画像、## 成绩与课程匹配、## 项目核验与风险、## 文书与任务建议。</p>
+        <textarea className="task-pack-box" value={expertResult} onChange={e => setExpertResult(e.target.value)} placeholder={'## 申请者画像\n...\n\n## 成绩与课程匹配\n...\n\n## 项目核验与风险\n...\n\n## 文书与任务建议\n...'} />
+        <div className="button-row"><button className="primary" onClick={publishResult}>顾问复核后发布到申请者端</button></div>
+        <div className="section-tags">{['申请者画像', '成绩与课程匹配', '项目核验与风险', '文书与任务建议'].map(name => <Status key={name} value={`${name}：${sections[name] ? '已识别' : '待粘贴'}`} />)}</div>
+      </div>
+    </div>
+    {message && <div className="sync-message">{message}</div>}
+    <div className="science-notes"><h3>边界说明</h3><ol><li>这是 L1 半自动真实接入，不是专家中心后台 API 自动调用。</li><li>申请者端只展示顾问确认版，不展示未经审核的 AI 原始输出。</li><li>官网、deadline、NC、语言和 VPD/uni-assist 信息仍需保留来源链接、抓取日期和“待人工核实”标记。</li></ol></div>
+  </section>;
+}
 
 function ConsultantApplicantSyncCard({ portalData, setPortalData, setPortalMode, portalMode }) {
   const loop = portalData?.applicantLoop;
@@ -1642,7 +1807,7 @@ function App() {
         setPortalMode(result.mode || 'api');
       }
     } catch (error) {
-      const fallback = loadPublishedData();
+      const fallback = mergePortalData(loadPublishedData(false));
       setPortalData(fallback);
       setPortalMode('localStorage-fallback');
     }
@@ -1676,7 +1841,10 @@ function App() {
         setPortalData(mergedPortal);
         setPortalMode(data.mode || 'api');
       }
-    }).catch(() => setPortalMode('localStorage'));
+    }).catch(() => {
+      setPortalData(mergePortalData(loadPublishedData(false))); 
+      setPortalMode('localStorage');
+    });
   }, [user?.applicantId]);
   const runDemo = async (profileOverride) => {
     const activeProfile = saveIntakeProfile(profileOverride || demoProfile);
