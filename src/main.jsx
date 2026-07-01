@@ -1802,7 +1802,8 @@ function App() {
     try {
       const result = await api('/portal/read', { applicantId: user?.applicantId || 'app-001' });
       if (result.portalData) {
-        const mergedPortal = saveSharedPortalData(result.portalData);
+        const localPublished = loadPublishedData(false);
+        const mergedPortal = localPublished?.l1ExpertBridge ? mergePortalData({ ...result.portalData, ...localPublished }) : saveSharedPortalData(result.portalData);
         setPortalData(mergedPortal);
         setPortalMode(result.mode || 'api');
       }
@@ -1837,7 +1838,8 @@ function App() {
     const applicantId = user?.applicantId || 'app-001';
     api('/portal/read', { applicantId }, { method: 'GET' }).then(data => {
       if (data?.portalData) {
-        const mergedPortal = saveSharedPortalData(data.portalData);
+        const localPublished = loadPublishedData(false);
+        const mergedPortal = localPublished?.l1ExpertBridge ? mergePortalData({ ...data.portalData, ...localPublished }) : saveSharedPortalData(data.portalData);
         setPortalData(mergedPortal);
         setPortalMode(data.mode || 'api');
       }
