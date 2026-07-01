@@ -275,12 +275,27 @@ function normalizeCourseEngine(engine = {}) {
 }
 
 function normalizeRunResult(result = {}) {
-  const engine = normalizeCourseEngine(result.courseMatchingEngine || {});
-  const matching = result.matching || result.courseMatching || [];
-  const normalized = { ...result, matching, courseMatching: result.courseMatching || matching, courseMatchingEngine: engine };
+  const profile = normalizeIntakeProfile(result.profile || loadIntakeProfile());
+  const fallback = buildLocalDemoResult(profile);
+  const apiMatching = Array.isArray(result.matching) ? result.matching : [];
+  const apiCourseMatching = Array.isArray(result.courseMatching) ? result.courseMatching : [];
+  const courseMatching = apiCourseMatching.length ? apiCourseMatching : (apiMatching.length ? apiMatching : fallback.courseMatching);
+  const rawEngine = result.courseMatchingEngine || {};
+  const needsEngineFallback = !rawEngine.programMatches?.length && !rawEngine.moduleSummary?.length && !rawEngine.requirementProfiles?.length;
+  const engine = normalizeCourseEngine(needsEngineFallback ? fallback.courseMatchingEngine : rawEngine);
+  const normalized = {
+    ...fallback,
+    ...result,
+    profile,
+    matching: apiMatching.length ? apiMatching : courseMatching,
+    courseMatching,
+    courseMatchingEngine: engine,
+    programs: result.programs?.length ? result.programs : fallback.programs,
+    grade: result.grade || result.germanGrade || fallback.grade
+  };
   return {
     ...normalized,
-    applicantLoop: normalized.applicantLoop || buildApplicantFullLoop(normalized.profile || loadIntakeProfile(), normalized)
+    applicantLoop: normalized.applicantLoop || buildApplicantFullLoop(profile, normalized)
   };
 }
 
